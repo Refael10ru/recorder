@@ -51,10 +51,15 @@ pytest plugin + proxy objects + serializer + storage.
   - `__call__(*a, **k)` → records event for a direct callable (`method="__call__"`).
   - `__getattr__(m)` → returns a wrapper that invokes the real method, records
     `(name, m, args, kwargs, return | raised)`, appends to the ordered event list.
+  - **Exceptions:** if the real call raises, the wrapper records the exception
+    into the event's `raised` field (serialized, pickle path — exceptions are
+    rarely JSON-able), leaves `return` null, then **re-raises** to the live test
+    so record mode behaves identically to no recorder.
 - **`PlayerProxy(events_iter, name)`**
   - `__call__` / method access → pop next event, assert `(method, args, kwargs)`
-    equal, return the deserialized return value (or re-raise the recorded
-    exception). Holds no real target.
+    equal. If the event has `raised`, **re-raise the deserialized exception** at
+    the matching call site (same type, args, and — best effort — traceback note);
+    otherwise return the deserialized return value. Holds no real target.
 - **`serialize.py`** — `dumps(obj)`: try JSON with a custom encoder; on `TypeError`
   fall back to `{"__pickle__": base64(pickle(obj))}`. `loads(env)` inverse.
 - **`storage.py`** — maps nodeid → `tests/recordings/<module>/<nodeid>.json`.
@@ -67,7 +72,11 @@ pytest plugin + proxy objects + serializer + storage.
   "return": <serialized>, "raised": null }
 ```
 
-`method = "__call__"` for a direct callable. Events ordered per fixture.
+`method = "__call__"` for a direct callable. Events ordered per fixture. Exactly
+one of `return` / `raised` is non-null per event: a recorded raise sets `raised`
+to the serialized exception and leaves `return` null. Exceptions are captured in
+record (then re-raised live) and re-raised in play — a method that raises is a
+fully recorded, replayable outcome, not an error in the recorder.
 
 ### Matching (strict ordered)
 
@@ -100,7 +109,9 @@ calls. The testbed climbs a depth ladder, built incrementally in this order:
    in-scope.
 
 Each rung is a fixture in the mock project plus a system test that exercises it.
-The recorder is validated against each rung under `record` then `play`.
+The recorder is validated against each rung under `record` then `play`. Every
+rung also includes at least one call that **raises**, to validate exception
+record/replay alongside return-value replay.
 
 ## Out of Scope (YAGNI, pending testbed findings)
 
