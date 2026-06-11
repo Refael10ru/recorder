@@ -1,0 +1,3 @@
+# POLICY: do not add to `ignore` / `per-file-ignores` without explicit user approval.
+[lint]
+select = ["ALL"]
