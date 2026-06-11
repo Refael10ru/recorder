@@ -38,16 +38,37 @@ construction is avoided entirely — this is the optimization.
 
 pytest plugin + proxy objects + serializer + storage.
 
+### Layering (testability)
+
+The engine is **pytest-agnostic and manually drivable**. Three layers, each
+usable on its own:
+
+1. **Engine** (`RecordingProxy` / `PlayerProxy`) — accept an explicit **store**
+   (the file/handle they read/write) plus the fixture `name`. They know nothing
+   about pytest, modes, or path resolution. A unit test can construct a
+   `RecordingProxy` over any object with any store, drive calls, then construct a
+   `PlayerProxy` over the same store and replay — no pytest involved.
+2. **Storage** (`storage.py`) — pure path/IO functions, separate from the engine.
+   `resolve_recording_path(nodeid) -> Path` and a small `RecordingStore` that
+   loads/saves the per-test JSON file. Decoupled so the engine never hard-codes
+   where recordings live.
+3. **Wiring** (`@record` decorator + plugin) — thin selector only. Reads mode from
+   the controller, resolves the store via storage, constructs the right engine
+   object. No record/replay logic of its own.
+
 ### Components
 
 - **`pytest_recorder/plugin.py`** — registers `--recorder` option; session-scoped
-  controller holds current mode + current test nodeid; owns the per-test event
-  store; on teardown flushes (record) or asserts full consumption (play).
-- **`@record(name)`** decorator — wraps a fixture function:
+  controller exposes current mode + current test nodeid; on teardown flushes the
+  store (record) or asserts full consumption (play). Holds no proxy logic.
+- **`@record(name)`** decorator — **thin wrapper, selects off / record / play**:
   - `off`: yield the fixture's value untouched.
-  - `record`: run fixture body, wrap value in `RecordingProxy(value, name, controller)`, yield proxy.
-  - `play`: skip body, yield `PlayerProxy(events_for(name), name)`.
-- **`RecordingProxy(target, name)`**
+  - `record`: run fixture body, `yield RecordingProxy(value, name, store)`.
+  - `play`: skip body, `yield PlayerProxy(name, store)`.
+  - It only resolves `store = RecordingStore(resolve_recording_path(nodeid))` from
+    the controller and picks a branch — nothing else.
+- **`RecordingProxy(target, name, store)`** — `store` is the explicit file/handle
+  it writes events to (injected, not discovered):
   - `__call__(*a, **k)` → records event for a direct callable (`method="__call__"`).
   - `__getattr__(m)` → returns a wrapper that invokes the real method, records
     `(name, m, args, kwargs, return | raised)`, appends to the ordered event list.
@@ -55,15 +76,16 @@ pytest plugin + proxy objects + serializer + storage.
     into the event's `raised` field (serialized, pickle path — exceptions are
     rarely JSON-able), leaves `return` null, then **re-raises** to the live test
     so record mode behaves identically to no recorder.
-- **`PlayerProxy(events_iter, name)`**
+- **`PlayerProxy(name, store)`** — reads its events from the explicit `store`:
   - `__call__` / method access → pop next event, assert `(method, args, kwargs)`
     equal. If the event has `raised`, **re-raise the deserialized exception** at
     the matching call site (same type, args, and — best effort — traceback note);
     otherwise return the deserialized return value. Holds no real target.
 - **`serialize.py`** — `dumps(obj)`: try JSON with a custom encoder; on `TypeError`
   fall back to `{"__pickle__": base64(pickle(obj))}`. `loads(env)` inverse.
-- **`storage.py`** — maps nodeid → `tests/recordings/<module>/<nodeid>.json`.
-  File shape: `{ "<fixture_name>": [event, ...], ... }`.
+- **`storage.py`** — `resolve_recording_path(nodeid) -> Path` (standalone, maps
+  nodeid → `tests/recordings/<module>/<nodeid>.json`) and `RecordingStore`
+  (load/save the per-test file). File shape: `{ "<fixture_name>": [event, ...], ... }`.
 
 ### Event model
 
@@ -122,8 +144,12 @@ record/replay alongside return-value replay.
 
 ## Testing (TDD)
 
-- **Unit:** serializer roundtrip (JSON path + pickle path); `RecordingProxy`
-  captures calls; `PlayerProxy` match + each error type; storage path mapping.
+- **Unit (engine, no pytest):** construct `RecordingProxy(obj, name, store)` over a
+  plain store, drive calls manually, then `PlayerProxy(name, store)` over the same
+  store and replay — record→play round-trip with zero pytest. Covers match +
+  every error type + exception replay.
+- **Unit:** serializer roundtrip (JSON path + pickle path); `resolve_recording_path`
+  nodeid → path mapping; `RecordingStore` load/save.
 - **Integration:** the mock testbed run as a subprocess — `--recorder=record` then
   `--recorder=play`, assert pass; then mutate a test and assert `RecordingMismatch`.
 - Depth ladder doubles as the integration matrix: every rung must round-trip.
