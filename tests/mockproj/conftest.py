@@ -20,3 +20,9 @@ def calc():
 @record("data")
 def data():
     return objects.DataSource()
+
+
+@pytest.fixture
+@record("client")
+def client():
+    return objects.Client()

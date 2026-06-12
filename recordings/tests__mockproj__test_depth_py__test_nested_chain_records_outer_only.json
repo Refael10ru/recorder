@@ -1,0 +1,13 @@
+{
+  "client": [
+    {
+      "method": "session",
+      "args": [],
+      "kwargs": {},
+      "return": {
+        "__pickle__": "gASVKQAAAAAAAACMFnRlc3RzLm1vY2twcm9qLm9iamVjdHOUjAdTZXNzaW9ulJOUKYGULg=="
+      },
+      "raised": null
+    }
+  ]
+}

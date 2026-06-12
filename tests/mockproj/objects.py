@@ -30,3 +30,15 @@ class DataSource:
 
     def frame(self):
         return pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+
+
+class Session:
+    def query(self, sql):
+        return f"result:{sql}"
+
+
+class Client:
+    """Rung 4 -- chained: client.session().query(...)."""
+
+    def session(self):
+        return Session()

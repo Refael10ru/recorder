@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pytest
 
@@ -27,3 +29,12 @@ def test_pickle_only_returns(data):
     df = data.frame()
     assert list(df.columns) == ["a", "b"]
     assert df["a"].tolist() == [1, 2]
+
+
+@pytest.mark.skipif(
+    os.environ.get("RECORDER_MODE") == "play",
+    reason="nested chain not replayable yet -- see depth-findings note",
+)
+def test_nested_chain_records_outer_only(client):
+    sess = client.session()
+    assert sess.query("SELECT 1") == "result:SELECT 1"
