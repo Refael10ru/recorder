@@ -17,23 +17,24 @@ def get_controller():
 class Controller:
     """Holds recorder mode + per-test store; flushes/asserts at teardown."""
 
-    def __init__(self, mode, root):
+    def __init__(self, mode):
         self.mode = mode
-        self.root = root
         self._nodeid = None
+        self._test_file = None
         self._store = None
         self._players = []
 
-    def begin_test(self, nodeid):
+    def begin_test(self, nodeid, test_file):
         """Reset per-test state at the start of each test."""
         self._nodeid = nodeid
+        self._test_file = test_file
         self._store = None
         self._players = []
 
     def current_store(self):
         """Lazily build (record) or load (play) this test's recording store."""
         if self._store is None:
-            path = resolve_recording_path(self._nodeid, self.root)
+            path = resolve_recording_path(self._nodeid, self._test_file)
             if self.mode == "play" and not path.exists():
                 msg = (
                     f"recorder: no recording at {path}; "
@@ -73,12 +74,12 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     """Create the global Controller from the chosen mode."""
     global _CONTROLLER
-    _CONTROLLER = Controller(config.getoption("--recorder"), config.rootpath)
+    _CONTROLLER = Controller(config.getoption("--recorder"))
 
 
 def pytest_runtest_setup(item):
     """Reset controller state for the test about to run."""
-    get_controller().begin_test(item.nodeid)
+    get_controller().begin_test(item.nodeid, item.path)
 
 
 def pytest_runtest_teardown(item):

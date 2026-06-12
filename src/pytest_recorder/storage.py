@@ -5,16 +5,19 @@ import re
 from pathlib import Path
 
 
-def resolve_recording_path(nodeid: str, root: Path) -> Path:
-    """Map a pytest nodeid to its recording file under <root>/recordings/.
+def resolve_recording_path(nodeid: str, test_file: Path) -> Path:
+    """Map a pytest nodeid to its recording file beside the test module.
 
-    Structural separators (``/`` between path segments and ``::`` between the
-    module and test name) become ``__``; every other non-alphanumeric
-    character becomes a single ``_``.
+    Recordings live in a ``recordings/`` directory next to the test file, so
+    they travel with the test when it is copied or moved. The filename keys on
+    the module stem plus the test portion of the nodeid (everything after
+    ``::``); every non-alphanumeric character becomes a single ``_``.
     """
-    structural = nodeid.replace("/", "__").replace("::", "__")
-    safe = re.sub(r"[^0-9A-Za-z_]", "_", structural)
-    return Path(root) / "recordings" / f"{safe}.json"
+    test_file = Path(test_file)
+    _, _, test_part = nodeid.partition("::")
+    key = f"{test_file.stem}__{test_part}" if test_part else nodeid
+    safe = re.sub(r"[^0-9A-Za-z_]", "_", key)
+    return test_file.parent / "recordings" / f"{safe}.json"
 
 
 class RecordingStore:
