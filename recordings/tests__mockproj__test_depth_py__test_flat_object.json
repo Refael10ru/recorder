@@ -1,0 +1,30 @@
+{
+  "calc": [
+    {
+      "method": "add",
+      "args": [
+        2,
+        3
+      ],
+      "kwargs": {},
+      "return": 5,
+      "raised": null
+    },
+    {
+      "method": "summary",
+      "args": [
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "kwargs": {},
+      "return": {
+        "sum": 6,
+        "count": 3
+      },
+      "raised": null
+    }
+  ]
+}

@@ -8,3 +8,9 @@ from tests.mockproj import objects
 @record("adder")
 def adder():
     return objects.add
+
+
+@pytest.fixture
+@record("calc")
+def calc():
+    return objects.Calculator()
