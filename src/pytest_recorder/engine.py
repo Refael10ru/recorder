@@ -8,24 +8,31 @@ from pytest_recorder.errors import (
 from pytest_recorder.serialize import decode, encode
 
 
+def _encode_call(args, kwargs):
+    """Encode a call's positional and keyword args to JSON-safe forms."""
+    return [encode(a) for a in args], {k: encode(v) for k, v in kwargs.items()}
+
+
 def make_event(method, args, kwargs, ret, exc):
-    """Build a serialized event dict for one recorded call."""
-    return {
-        "method": method,
-        "args": [encode(a) for a in args],
-        "kwargs": {k: encode(v) for k, v in kwargs.items()},
-        "return": None if exc is not None else encode(ret),
-        "raised": encode(exc) if exc is not None else None,
-    }
+    """Build a serialized event dict for one recorded call.
+
+    Exactly one of ``return`` / ``raised`` is non-null.
+    """
+    enc_args, enc_kwargs = _encode_call(args, kwargs)
+    if exc is not None:
+        outcome = {"return": None, "raised": encode(exc)}
+    else:
+        outcome = {"return": encode(ret), "raised": None}
+    return {"method": method, "args": enc_args, "kwargs": enc_kwargs, **outcome}
 
 
 class RecordingProxy:
     """Wrap a real target; record each call, then return/re-raise as normal."""
 
     def __init__(self, target, name, store):
-        object.__setattr__(self, "_target", target)
-        object.__setattr__(self, "_name", name)
-        object.__setattr__(self, "_store", store)
+        self._target = target
+        self._name = name
+        self._store = store
 
     def _record(self, method, bound, args, kwargs):
         exc = None
@@ -43,8 +50,7 @@ class RecordingProxy:
         return self._record("__call__", self._target, args, kwargs)
 
     def __getattr__(self, item):
-        target = object.__getattribute__(self, "_target")
-        attr = getattr(target, item)
+        attr = getattr(self._target, item)
         if not callable(attr):
             msg = (
                 f"recorder: attribute '{item}' on '{self._name}' is not callable; "
@@ -62,28 +68,25 @@ class PlayerProxy:
     """Replay recorded events in strict order; holds no real target."""
 
     def __init__(self, name, store):
-        object.__setattr__(self, "_name", name)
-        object.__setattr__(self, "_events", list(store.events(name)))
-        object.__setattr__(self, "_pos", 0)
+        self._name = name
+        self._events = list(store.events(name))
+        self._pos = 0
 
     def _consume(self, method, args, kwargs):
         if self._pos >= len(self._events):
             msg = f"recorder: '{self._name}.{method}' called but recording is exhausted"
             raise RecordingExhausted(msg)
         ev = self._events[self._pos]
-        object.__setattr__(self, "_pos", self._pos + 1)
+        self._pos += 1
         # Match on ENCODED forms, not decoded values: encoded args are JSON-safe
         # (scalars/strings/{"__pickle__": b64}), so equality never evaluates the
         # truthiness of a live numpy array / pandas object (which would raise
         # "truth value is ambiguous"). The event already stores encoded args.
-        live_args = [encode(a) for a in args]
-        live_kwargs = {k: encode(v) for k, v in kwargs.items()}
-        if (
-            ev["method"] != method
-            or ev["args"] != live_args
-            or ev["kwargs"] != live_kwargs
-        ):
-            exp_m, exp_a, exp_k = ev["method"], ev["args"], ev["kwargs"]
+        live_args, live_kwargs = _encode_call(args, kwargs)
+        expected = (ev["method"], ev["args"], ev["kwargs"])
+        actual = (method, live_args, live_kwargs)
+        if expected != actual:
+            exp_m, exp_a, exp_k = expected
             msg = (
                 f"recorder: '{self._name}' call mismatch\n"
                 f"  expected: {exp_m}(args={exp_a}, kwargs={exp_k})\n"
