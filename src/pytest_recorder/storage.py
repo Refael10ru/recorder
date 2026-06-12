@@ -25,13 +25,13 @@ class RecordingStore:
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
-        self._data: dict[str, list] = {}
+        self._data: dict[str, list[dict]] = {}
 
     def append(self, name: str, event: dict) -> None:
         """Buffer one recorded event under a fixture name (record mode)."""
         self._data.setdefault(name, []).append(event)
 
-    def events(self, name: str) -> list:
+    def events(self, name: str) -> list[dict]:
         """Return the recorded events for a fixture name (empty if none)."""
         return self._data.get(name, [])
 
