@@ -17,6 +17,7 @@ pytest-recorder removes the hand-work. Record once against the real dependency; 
 - Turning slow integration/system tests into fast, deterministic ones.
 - Pinning the exact way your code uses a dependency — a regression guard, not just a speed-up.
 - Killing brittle, hand-maintained mocks for pure-function-like dependencies.
+- **Running only the tests that matter:** a passing replay means that test's behaviour is unchanged, so it needn't run for real; a replay failure pinpoints exactly the tests whose behaviour actually moved and need a full rerun.
 
 ## How it works
 
