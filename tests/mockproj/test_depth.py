@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 
@@ -19,3 +20,10 @@ def test_flat_object(calc):
 def test_flat_object_raises(calc):
     with pytest.raises(ZeroDivisionError):
         calc.divide(1, 0)
+
+
+def test_pickle_only_returns(data):
+    assert np.array_equal(data.vector(3), np.arange(3))
+    df = data.frame()
+    assert list(df.columns) == ["a", "b"]
+    assert df["a"].tolist() == [1, 2]

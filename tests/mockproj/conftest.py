@@ -14,3 +14,9 @@ def adder():
 @record("calc")
 def calc():
     return objects.Calculator()
+
+
+@pytest.fixture
+@record("data")
+def data():
+    return objects.DataSource()
