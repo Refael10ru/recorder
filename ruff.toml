@@ -1,3 +1,6 @@
 # POLICY: do not add to `ignore` / `per-file-ignores` without explicit user approval.
+# Curated rule set (relaxed from select=ALL with user approval 2026-06-12): a sane,
+# ergonomic selection that does not fight pytest (`assert`) or the spec'd pickle
+# fallback, and avoids ALL's mutually-exclusive rules.
 [lint]
-select = ["ALL"]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RET", "PIE"]
