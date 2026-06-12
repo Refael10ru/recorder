@@ -37,8 +37,10 @@ def test_pickle_fallback_for_numpy() -> None:
     arr = np.array([1, 2, 3])
     enc = encode(arr)
     json.dumps(enc)  # must be JSON-safe
+    assert isinstance(enc, dict)
     assert "__pickle__" in enc
     out = decode(enc)
+    assert isinstance(out, np.ndarray)
     assert np.array_equal(out, arr)
 
 

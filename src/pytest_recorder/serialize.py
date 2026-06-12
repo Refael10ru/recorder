@@ -7,11 +7,12 @@ wrapped as ``{"__pickle__": "<base64>"}`` so the result is always JSON-safe.
 import base64
 import json
 import pickle
+from typing import TypeGuard
 
 _PICKLE_KEY = "__pickle__"
 
 
-def _is_envelope(obj: object) -> bool:
+def _is_envelope(obj: object) -> TypeGuard[dict]:
     """True if ``obj`` looks like a pickle envelope (sole ``__pickle__`` key)."""
     return isinstance(obj, dict) and set(obj.keys()) == {_PICKLE_KEY}
 
