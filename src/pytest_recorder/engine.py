@@ -1,6 +1,11 @@
 """Record/replay engine: RecordingProxy and PlayerProxy over an explicit store."""
 
-from pytest_recorder.serialize import encode
+from pytest_recorder.errors import (
+    RecordingExhausted,
+    RecordingMismatch,
+    RecordingUnderused,
+)
+from pytest_recorder.serialize import decode, encode
 
 
 def make_event(method, args, kwargs, ret, exc):
@@ -49,5 +54,51 @@ class RecordingProxy:
 
         def wrapper(*args, **kwargs):
             return self._record(item, attr, args, kwargs)
+
+        return wrapper
+
+
+class PlayerProxy:
+    """Replay recorded events in strict order; holds no real target."""
+
+    def __init__(self, name, store):
+        object.__setattr__(self, "_name", name)
+        object.__setattr__(self, "_events", list(store.events(name)))
+        object.__setattr__(self, "_pos", 0)
+
+    def _consume(self, method, args, kwargs):
+        if self._pos >= len(self._events):
+            msg = f"recorder: '{self._name}.{method}' called but recording is exhausted"
+            raise RecordingExhausted(msg)
+        ev = self._events[self._pos]
+        object.__setattr__(self, "_pos", self._pos + 1)
+        exp_args = [decode(a) for a in ev["args"]]
+        exp_kwargs = {k: decode(v) for k, v in ev["kwargs"].items()}
+        if ev["method"] != method or exp_args != list(args) or exp_kwargs != kwargs:
+            msg = (
+                f"recorder: '{self._name}' call mismatch\n"
+                f"  expected: {ev['method']}(args={exp_args}, kwargs={exp_kwargs})\n"
+                f"  got:      {method}(args={list(args)}, kwargs={kwargs})"
+            )
+            raise RecordingMismatch(msg)
+        if ev["raised"] is not None:
+            raise decode(ev["raised"])
+        return decode(ev["return"])
+
+    def assert_consumed(self):
+        """Raise if the test used fewer recorded events than exist."""
+        if self._pos != len(self._events):
+            msg = (
+                f"recorder: '{self._name}' used {self._pos} of "
+                f"{len(self._events)} recorded calls"
+            )
+            raise RecordingUnderused(msg)
+
+    def __call__(self, *args, **kwargs):
+        return self._consume("__call__", args, kwargs)
+
+    def __getattr__(self, item):
+        def wrapper(*args, **kwargs):
+            return self._consume(item, args, kwargs)
 
         return wrapper

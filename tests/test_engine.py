@@ -1,6 +1,11 @@
 import pytest
 
-from pytest_recorder.engine import RecordingProxy
+from pytest_recorder.engine import PlayerProxy, RecordingProxy
+from pytest_recorder.errors import (
+    RecordingExhausted,
+    RecordingMismatch,
+    RecordingUnderused,
+)
 from pytest_recorder.storage import RecordingStore
 
 
@@ -38,3 +43,55 @@ def test_recording_proxy_records_and_reraises_exception(tmp_path):
     ev = store.events("calc")[0]
     assert ev["return"] is None
     assert ev["raised"] is not None
+
+
+def _recorded_store(tmp_path):
+    store = RecordingStore(tmp_path / "r.json")
+    proxy = RecordingProxy(Calc(), "calc", store)
+    proxy.add(2, 3)
+    store.flush()
+    loaded = RecordingStore(tmp_path / "r.json")
+    loaded.load()
+    return loaded
+
+
+def test_player_replays_return(tmp_path):
+    store = _recorded_store(tmp_path)
+    player = PlayerProxy("calc", store)
+    assert player.add(2, 3) == 5
+    player.assert_consumed()
+
+
+def test_player_mismatch_on_wrong_args(tmp_path):
+    store = _recorded_store(tmp_path)
+    player = PlayerProxy("calc", store)
+    with pytest.raises(RecordingMismatch):
+        player.add(9, 9)
+
+
+def test_player_exhausted_on_extra_call(tmp_path):
+    store = _recorded_store(tmp_path)
+    player = PlayerProxy("calc", store)
+    player.add(2, 3)
+    with pytest.raises(RecordingExhausted):
+        player.add(2, 3)
+
+
+def test_player_underused_when_events_left(tmp_path):
+    store = _recorded_store(tmp_path)
+    player = PlayerProxy("calc", store)
+    with pytest.raises(RecordingUnderused):
+        player.assert_consumed()
+
+
+def test_player_replays_exception(tmp_path):
+    store = RecordingStore(tmp_path / "r.json")
+    rec = RecordingProxy(Calc(), "calc", store)
+    with pytest.raises(ValueError):
+        rec.boom()
+    store.flush()
+    loaded = RecordingStore(tmp_path / "r.json")
+    loaded.load()
+    player = PlayerProxy("calc", loaded)
+    with pytest.raises(ValueError):
+        player.boom()
