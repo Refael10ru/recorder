@@ -1,0 +1,24 @@
+{
+  "adder": [
+    {
+      "method": "__call__",
+      "args": [
+        2,
+        3
+      ],
+      "kwargs": {},
+      "return": 5,
+      "raised": null
+    },
+    {
+      "method": "__call__",
+      "args": [
+        10,
+        20
+      ],
+      "kwargs": {},
+      "return": 30,
+      "raised": null
+    }
+  ]
+}

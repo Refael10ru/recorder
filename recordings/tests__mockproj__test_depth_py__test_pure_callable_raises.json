@@ -1,0 +1,16 @@
+{
+  "adder": [
+    {
+      "method": "__call__",
+      "args": [
+        "x",
+        1
+      ],
+      "kwargs": {},
+      "return": null,
+      "raised": {
+        "__pickle__": "gASVTAAAAAAAAACMCGJ1aWx0aW5zlIwJVHlwZUVycm9ylJOUjCtjYW4gb25seSBjb25jYXRlbmF0ZSBzdHIgKG5vdCAiaW50IikgdG8gc3RylIWUUpQu"
+      }
+    }
+  ]
+}
