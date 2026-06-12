@@ -46,3 +46,17 @@ def test_custom_object_roundtrip() -> None:
     """A custom object roundtrips via the pickle fallback."""
     enc = encode(P(5))
     assert decode(enc) == P(5)
+
+
+def test_user_dict_colliding_with_pickle_sentinel_roundtrips() -> None:
+    """A user dict that looks like an envelope is not misread on decode."""
+    obj = {"__pickle__": "not really pickled"}
+    enc = encode(obj)
+    json.dumps(enc)  # still JSON-safe
+    assert decode(enc) == obj
+
+
+def test_nested_sentinel_dict_is_preserved() -> None:
+    """A sentinel-shaped dict nested in a list is returned untouched."""
+    obj = [{"__pickle__": "x"}, 1]
+    assert decode(encode(obj)) == obj
