@@ -1,7 +1,8 @@
 import pytest
 
 from pytest_recorder import record
-from tests.mockproj import objects
+
+from . import objects
 
 
 @pytest.fixture
