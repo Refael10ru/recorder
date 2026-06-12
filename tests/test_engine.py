@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from pytest_recorder.engine import PlayerProxy, RecordingProxy
@@ -15,6 +16,9 @@ class Calc:
 
     def boom(self):
         raise ValueError("nope")
+
+    def first(self, arr):
+        return int(arr[0])
 
 
 def test_recording_proxy_records_method_call(tmp_path):
@@ -82,6 +86,32 @@ def test_player_underused_when_events_left(tmp_path):
     player = PlayerProxy("calc", store)
     with pytest.raises(RecordingUnderused):
         player.assert_consumed()
+
+
+def test_player_matches_numpy_array_arg(tmp_path):
+    # Regression: a pickle-fallback arg (numpy array) must match in play without
+    # raising "truth value of an array is ambiguous".
+    store = RecordingStore(tmp_path / "r.json")
+    rec = RecordingProxy(Calc(), "calc", store)
+    rec.first(np.array([10, 20, 30]))
+    store.flush()
+    loaded = RecordingStore(tmp_path / "r.json")
+    loaded.load()
+    player = PlayerProxy("calc", loaded)
+    assert player.first(np.array([10, 20, 30])) == 10
+    player.assert_consumed()
+
+
+def test_player_mismatch_on_different_numpy_arg(tmp_path):
+    store = RecordingStore(tmp_path / "r.json")
+    rec = RecordingProxy(Calc(), "calc", store)
+    rec.first(np.array([10, 20, 30]))
+    store.flush()
+    loaded = RecordingStore(tmp_path / "r.json")
+    loaded.load()
+    player = PlayerProxy("calc", loaded)
+    with pytest.raises(RecordingMismatch):
+        player.first(np.array([99, 20, 30]))
 
 
 def test_player_replays_exception(tmp_path):

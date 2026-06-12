@@ -72,13 +72,22 @@ class PlayerProxy:
             raise RecordingExhausted(msg)
         ev = self._events[self._pos]
         object.__setattr__(self, "_pos", self._pos + 1)
-        exp_args = [decode(a) for a in ev["args"]]
-        exp_kwargs = {k: decode(v) for k, v in ev["kwargs"].items()}
-        if ev["method"] != method or exp_args != list(args) or exp_kwargs != kwargs:
+        # Match on ENCODED forms, not decoded values: encoded args are JSON-safe
+        # (scalars/strings/{"__pickle__": b64}), so equality never evaluates the
+        # truthiness of a live numpy array / pandas object (which would raise
+        # "truth value is ambiguous"). The event already stores encoded args.
+        live_args = [encode(a) for a in args]
+        live_kwargs = {k: encode(v) for k, v in kwargs.items()}
+        if (
+            ev["method"] != method
+            or ev["args"] != live_args
+            or ev["kwargs"] != live_kwargs
+        ):
+            exp_m, exp_a, exp_k = ev["method"], ev["args"], ev["kwargs"]
             msg = (
                 f"recorder: '{self._name}' call mismatch\n"
-                f"  expected: {ev['method']}(args={exp_args}, kwargs={exp_kwargs})\n"
-                f"  got:      {method}(args={list(args)}, kwargs={kwargs})"
+                f"  expected: {exp_m}(args={exp_a}, kwargs={exp_k})\n"
+                f"  got:      {method}(args={live_args}, kwargs={live_kwargs})"
             )
             raise RecordingMismatch(msg)
         if ev["raised"] is not None:
