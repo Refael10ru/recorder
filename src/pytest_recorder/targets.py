@@ -1,9 +1,11 @@
-"""record_targets: monkeypatch classes/callables by import path for a test.
+"""record_class / record_function: monkeypatch by import path for a test.
 
-Unlike the fixture ``@record`` decorator (which wraps a fixture's value), this
-patches named symbols *where they are looked up* for the duration of a ``with``
-block. Every instance constructed through a patched symbol is recorded (record
-mode) or served by a player (play mode), keyed by the constructor arguments.
+``record_class`` is for **class/factory** symbols: the constructed instance is
+wrapped in a proxy so method calls on it are also recorded.
+
+``record_function`` is for **plain callable** symbols (functions, builtins,
+methods): the call itself is recorded and the real return value is passed
+through unchanged.  Use this for module-level APIs like ``wikipedia.search``.
 """
 
 import functools
@@ -31,7 +33,7 @@ def _base_key(path: str, args: tuple, kwargs: dict) -> str:
     return f"{path}({sig})"
 
 
-class record_targets:
+class record_class:
     """Patch each import path for the enclosed block; usable as a decorator.
 
     Named in lowercase because it reads as a verb at call sites and doubles as a
@@ -44,7 +46,7 @@ class record_targets:
         self._players: list[PlayerProxy] = []
         self._counters: dict[str, int] = {}
 
-    def __enter__(self) -> "record_targets":
+    def __enter__(self) -> "record_class":
         self._patches = []
         self._players = []
         self._counters = {}
@@ -55,7 +57,8 @@ class record_targets:
         for path in self._paths:
             module, attr = _resolve(path)
             original = getattr(module, attr)
-            setattr(module, attr, self._make_shim(ctrl.mode, path, original, store))
+            replacement = self._make_replacement(ctrl.mode, path, original, store)
+            setattr(module, attr, replacement)
             self._patches.append((module, attr, original))
         return self
 
@@ -70,7 +73,7 @@ class record_targets:
     def __call__(self, func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            with record_targets(*self._paths):
+            with record_class(*self._paths):
                 return func(*args, **kwargs)
 
         return wrapper
@@ -81,15 +84,51 @@ class record_targets:
         self._counters[base] = idx + 1
         return f"{base}#{idx}"
 
-    def _make_shim(
+    def _make_replacement(
         self, mode: str, path: str, original: Callable, store: RecordingStore
     ) -> Callable:
         def shim(*args: Any, **kwargs: Any) -> object:
             key = self._next_key(path, args, kwargs)
             if mode == "record":
+                # Wrap the instance so method calls on it are also recorded.
+                # Wrapping the class via __call__ instead would lose method recording.
                 return RecordingProxy(original(*args, **kwargs), key, store)
             player = PlayerProxy(key, store)
             self._players.append(player)
-            return player
+            return player  # player replays method calls via __getattr__
+
+        return shim
+
+
+class record_function(record_class):
+    """Like record_class but for plain callables (functions, builtins, methods).
+
+    The call itself is recorded and the real return value is passed through.
+    Use this for module-level APIs like ``wikipedia.search`` where the symbol
+    is a function, not a class whose returned instance needs method recording.
+    """
+
+    def __call__(self, func: Callable) -> Callable:
+        # Override so the decorator form re-enters record_function, not record_class.
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            with record_function(*self._paths):
+                return func(*args, **kwargs)
+
+        return wrapper
+
+    def _make_replacement(
+        self, mode: str, path: str, original: Callable, store: RecordingStore
+    ) -> Callable:
+        def shim(*args: Any, **kwargs: Any) -> object:
+            key = self._next_key(path, args, kwargs)
+            if mode == "record":
+                # Wrap the callable, not its return value: __call__ records and
+                # returns the real result. record_class wraps the instance instead.
+                return RecordingProxy(original, key, store)(*args, **kwargs)
+            player = PlayerProxy(key, store)
+            self._players.append(player)
+            # Consume the __call__ event and return the recorded value directly.
+            return player(*args, **kwargs)
 
         return shim

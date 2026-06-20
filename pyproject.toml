@@ -3,7 +3,12 @@ name = "pytest-recorder"
 version = "0.1.0"
 description = "Record/replay fixture mocking for system tests"
 requires-python = ">=3.11"
-dependencies = ["pytest>=8", "numpy", "pandas"]
+dependencies = [
+    "pytest>=8",
+    "numpy",
+    "pandas",
+    "wikipedia>=1.4.0",
+]
 
 [build-system]
 requires = ["hatchling"]

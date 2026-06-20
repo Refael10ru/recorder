@@ -1,4 +1,4 @@
-"""Tests for record_targets: monkeypatch-style record/replay by import path."""
+"""Tests for record_class: monkeypatch-style record/replay by import path."""
 
 import contextlib
 
@@ -31,19 +31,19 @@ def install_controller(tmp_path, monkeypatch):
 
 
 def test_record_then_play_roundtrip(install_controller):
-    from pytest_recorder import record_targets
+    from pytest_recorder import record_class
 
-    with install_controller("record"), record_targets(TARGET):
+    with install_controller("record"), record_class(TARGET):
         assert _targetmod.run("prod", "k1") == "prod:k1"
 
-    with install_controller("play"), record_targets(TARGET):
+    with install_controller("play"), record_class(TARGET):
         assert _targetmod.run("prod", "k1") == "prod:k1"
 
 
 def test_play_does_not_build_real_object(install_controller, monkeypatch):
-    from pytest_recorder import record_targets
+    from pytest_recorder import record_class
 
-    with install_controller("record"), record_targets(TARGET):
+    with install_controller("record"), record_class(TARGET):
         assert _targetmod.run("prod", "k1") == "prod:k1"
 
     # Break the real dependency: play must serve the recording, never call this.
@@ -52,35 +52,35 @@ def test_play_does_not_build_real_object(install_controller, monkeypatch):
 
     monkeypatch.setattr(_targetmod.Dependency, "__init__", boom)
 
-    with install_controller("play"), record_targets(TARGET):
+    with install_controller("play"), record_class(TARGET):
         assert _targetmod.run("prod", "k1") == "prod:k1"
 
 
 def test_constructor_args_key_instances_independently(install_controller):
-    from pytest_recorder import record_targets
+    from pytest_recorder import record_class
 
-    with install_controller("record"), record_targets(TARGET):
+    with install_controller("record"), record_class(TARGET):
         assert _targetmod.run("alpha", "k") == "alpha:k"
         assert _targetmod.run("beta", "k") == "beta:k"
 
     # Replay in the opposite construction order: matched by ctor args, not order.
-    with install_controller("play"), record_targets(TARGET):
+    with install_controller("play"), record_class(TARGET):
         assert _targetmod.run("beta", "k") == "beta:k"
         assert _targetmod.run("alpha", "k") == "alpha:k"
 
 
 def test_off_mode_is_a_noop(install_controller):
-    from pytest_recorder import record_targets
+    from pytest_recorder import record_class
 
-    with install_controller("off"), record_targets(TARGET):
+    with install_controller("off"), record_class(TARGET):
         # real symbol untouched -> real Dependency runs, nothing recorded
         assert _targetmod.Dependency("x").fetch("y") == "x:y"
 
 
 def test_decorator_form_wraps_body(install_controller):
-    from pytest_recorder import record_targets
+    from pytest_recorder import record_class
 
-    @record_targets(TARGET)
+    @record_class(TARGET)
     def body():
         return _targetmod.run("prod", "k1")
 
@@ -91,13 +91,13 @@ def test_decorator_form_wraps_body(install_controller):
 
 
 def test_symbols_restored_after_exception(install_controller):
-    from pytest_recorder import record_targets
+    from pytest_recorder import record_class
 
     original = _targetmod.Dependency
     with (
         install_controller("record"),
         pytest.raises(RuntimeError),
-        record_targets(TARGET),
+        record_class(TARGET),
     ):
         assert _targetmod.Dependency is not original  # patched inside block
         raise RuntimeError("boom")
@@ -105,16 +105,16 @@ def test_symbols_restored_after_exception(install_controller):
 
 
 def test_play_underuse_raises_at_block_exit(install_controller):
-    from pytest_recorder import record_targets
+    from pytest_recorder import record_class
     from pytest_recorder.errors import RecordingUnderused
 
-    with install_controller("record"), record_targets(TARGET):
+    with install_controller("record"), record_class(TARGET):
         assert _targetmod.run("prod", "k1") == "prod:k1"
 
     with (
         install_controller("play"),
         pytest.raises(RecordingUnderused),
-        record_targets(TARGET),
+        record_class(TARGET),
     ):
         # build the instance but never call the recorded fetch
         _targetmod.Dependency("prod")
