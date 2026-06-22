@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from pytest_recorder.engine import PlayerProxy, RecordingProxy
+from pytest_recorder.engine import PlayerProxy, RecordingProxy, is_recorder_mock
 from pytest_recorder.errors import (
     RecordingExhausted,
     RecordingMismatch,
@@ -112,6 +112,26 @@ def test_player_mismatch_on_different_numpy_arg(tmp_path):
     player = PlayerProxy("calc", loaded)
     with pytest.raises(RecordingMismatch):
         player.first(np.array([99, 20, 30]))
+
+
+def test_is_recorder_mock_recording_proxy(tmp_path):
+    store = RecordingStore(tmp_path / "r.json")
+    proxy = RecordingProxy(Calc(), "calc", store)
+    assert proxy.__is_recorder_mock__() is True
+    assert is_recorder_mock(proxy) is True
+
+
+def test_is_recorder_mock_player_proxy(tmp_path):
+    store = _recorded_store(tmp_path)
+    player = PlayerProxy("calc", store)
+    assert player.__is_recorder_mock__() is True
+    assert is_recorder_mock(player) is True
+
+
+def test_is_recorder_mock_plain_object():
+    assert is_recorder_mock(Calc()) is False
+    assert is_recorder_mock(object()) is False
+    assert is_recorder_mock(42) is False
 
 
 def test_player_replays_exception(tmp_path):
