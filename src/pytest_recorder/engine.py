@@ -46,6 +46,9 @@ class RecordingProxy:
             raise exc
         return ret
 
+    def __is_recorder_mock__(self) -> bool:
+        return True
+
     def __call__(self, *args, **kwargs):
         return self._record("__call__", self._target, args, kwargs)
 
@@ -105,6 +108,9 @@ class PlayerProxy:
                 f"{len(self._events)} recorded calls"
             )
             raise RecordingUnderused(msg)
+
+    def __is_recorder_mock__(self) -> bool:
+        return True
 
     def __call__(self, *args, **kwargs):
         return self._consume("__call__", args, kwargs)

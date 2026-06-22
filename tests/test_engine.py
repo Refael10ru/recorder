@@ -114,6 +114,18 @@ def test_player_mismatch_on_different_numpy_arg(tmp_path):
         player.first(np.array([99, 20, 30]))
 
 
+def test_is_recorder_mock_recording_proxy(tmp_path):
+    store = RecordingStore(tmp_path / "r.json")
+    proxy = RecordingProxy(Calc(), "calc", store)
+    assert proxy.__is_recorder_mock__() is True
+
+
+def test_is_recorder_mock_player_proxy(tmp_path):
+    store = _recorded_store(tmp_path)
+    player = PlayerProxy("calc", store)
+    assert player.__is_recorder_mock__() is True
+
+
 def test_player_replays_exception(tmp_path):
     store = RecordingStore(tmp_path / "r.json")
     rec = RecordingProxy(Calc(), "calc", store)
