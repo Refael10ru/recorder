@@ -26,7 +26,18 @@ def make_event(method, args, kwargs, ret, exc):
     return {"method": method, "args": enc_args, "kwargs": enc_kwargs, **outcome}
 
 
-class RecordingProxy:
+def is_recorder_mock(obj: object) -> bool:
+    """Return True if *obj* is a RecordingProxy or PlayerProxy, False otherwise."""
+    fn = getattr(obj, "__is_recorder_mock__", None)
+    return callable(fn) and fn()
+
+
+class _RecorderMock:
+    def __is_recorder_mock__(self) -> bool:
+        return True
+
+
+class RecordingProxy(_RecorderMock):
     """Wrap a real target; record each call, then return/re-raise as normal."""
 
     def __init__(self, target, name, store):
@@ -46,9 +57,6 @@ class RecordingProxy:
             raise exc
         return ret
 
-    def __is_recorder_mock__(self) -> bool:
-        return True
-
     def __call__(self, *args, **kwargs):
         return self._record("__call__", self._target, args, kwargs)
 
@@ -67,7 +75,7 @@ class RecordingProxy:
         return wrapper
 
 
-class PlayerProxy:
+class PlayerProxy(_RecorderMock):
     """Replay recorded events in strict order; holds no real target."""
 
     def __init__(self, name, store):
@@ -108,9 +116,6 @@ class PlayerProxy:
                 f"{len(self._events)} recorded calls"
             )
             raise RecordingUnderused(msg)
-
-    def __is_recorder_mock__(self) -> bool:
-        return True
 
     def __call__(self, *args, **kwargs):
         return self._consume("__call__", args, kwargs)
