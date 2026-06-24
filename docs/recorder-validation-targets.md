@@ -33,9 +33,9 @@ Ranked by fit. Star counts approximate.
 | ✅ | [sammchardy/python-binance](https://github.com/sammchardy/python-binance) | Binance | ~6.9k | yes | real-net system tests | `client` fixture | flat | JSON dicts | public keyless | **GOOD** |
 | ✅ | [danpaquin/coinbasepro-python](https://github.com/danpaquin/coinbasepro-python) | Coinbase Pro | ~1.8k | yes | real-net / sandbox | inline `PublicClient()` | flat | dicts | public keyless | **GOOD** |
 | ⬜ | [PokeAPI/pokebase](https://github.com/PokeAPI/pokebase) | PokéAPI | ~350 | no (unittest) | real-net by default | inline `pb.api.get_data()` | flat | plain dicts | keyless | **GOOD** |
-| ✅ | [Finnhub-Stock-API/finnhub-python](https://github.com/Finnhub-Stock-API/finnhub-python) | Finnhub | ~1.0k | tox/sync | real-net | inline singleton client | flat | dicts | key (free) | **GOOD** |
+| ⚠️ | [Finnhub-Stock-API/finnhub-python](https://github.com/Finnhub-Stock-API/finnhub-python) | Finnhub | ~1.0k | none | **no test files** | inline singleton client | flat | dicts | key (free) | **POOR** |
 | ✅ | [goldsmith/Wikipedia](https://github.com/goldsmith/Wikipedia) | Wikipedia | ~3.0k | no (unittest) | mocked `_wiki_request` | module funcs | flat | lists/str/dict | keyless | **GOOD/OK** |
-| ⬜ | [bybit-exchange/pybit](https://github.com/bybit-exchange/pybit) | Bybit | ~0.66k | yes | mostly mock; 1 real-net | inline `HTTP()` | flat | dicts | public keyless | **OK** |
+| ✅ | [bybit-exchange/pybit](https://github.com/bybit-exchange/pybit) | Bybit | ~0.66k | yes | mostly mock; 1 real-net | inline `HTTP()` | flat | dicts | public keyless | **OK** |
 | ⬜ | [coinbase/coinbase-advanced-py](https://github.com/coinbase/coinbase-advanced-py) | Coinbase Adv | ~0.6k | no (unittest) | requests_mock | inline `RESTClient()` | flat | typed objs `.to_dict()` | key+secret | **OK/POOR** |
 | ⬜ | [RomelTorres/alpha_vantage](https://github.com/RomelTorres/alpha_vantage) | Alpha Vantage | ~4.8k | no (nose) | recorded data | inline `TimeSeries()` | flat | dict or DataFrame | key (free) | **OK/POOR** |
 

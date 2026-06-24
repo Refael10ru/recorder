@@ -22,13 +22,17 @@ def record(name: str | None = None):
             if ctrl.mode == "off":
                 yield factory(*args, **kwargs)
                 return
-            store = ctrl.current_store()
             if ctrl.mode == "record":
-                yield RecordingProxy(factory(*args, **kwargs), fixture_name, store)
+                # WHY: pass ctrl not ctrl.current_store() — the latter locks the proxy
+                # to the store of whichever test is running at fixture-creation time.
+                # For non-function-scope fixtures that outlive one test this is wrong:
+                # T2's calls land in T1's recording. Passing ctrl lets the proxy call
+                # ctrl.current_store() per call, always getting the right file.
+                yield RecordingProxy(factory(*args, **kwargs), fixture_name, ctrl)
             else:  # play -- factory NOT called
-                player = PlayerProxy(fixture_name, store)
-                ctrl.register_player(player)
-                yield player
+                # WHY: same rationale — PlayerProxy self-registers via _maybe_reload on
+                # each test boundary, so no explicit register_player call needed here.
+                yield PlayerProxy(fixture_name, ctrl)
 
         return wrapper
 

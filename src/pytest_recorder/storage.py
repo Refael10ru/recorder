@@ -40,6 +40,14 @@ class RecordingStore:
         with self.path.open() as fh:
             self._data = json.load(fh)
 
+    def current_store(self) -> "RecordingStore":
+        # WHY: duck-type parity with Controller — RecordingProxy/PlayerProxy call
+        # .current_store() on whatever source they hold; for a plain store (function-
+        # scope direct usage) this just returns self, preserving existing behaviour.
+        # Alternative: isinstance branch in engine — rejected because it couples
+        # engine to plugin and creates a circular import.
+        return self
+
     def flush(self) -> None:
         """Write buffered events to the recording file as JSON."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
