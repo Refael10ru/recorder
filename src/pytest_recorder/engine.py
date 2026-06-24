@@ -10,12 +10,12 @@ from pytest_recorder.errors import (
 from pytest_recorder.serialize import decode, encode, encode_exception
 from pytest_recorder.storage import RecordingStore
 
-# WHY: _INIT sentinel marks "never loaded" — distinct from _UNSET (used when source
-# has no _nodeid, i.e. a plain RecordingStore) so _maybe_reload triggers on first
-# call regardless of source type. Two sentinels instead of one avoids the case where
-# _last_nodeid == getattr(store, '_nodeid', _UNSET) at construction → no initial load.
+# WHY: _UNSET is the getattr() default for sources without _nodeid (RecordingStore).
+# PlayerProxy.__init__ sets _last_nodeid = object() — unique per construction,
+# guaranteed != _UNSET — so _maybe_reload always fires on the first call.
+# Alt: keep a second _INIT sentinel — removed; inline object() is equivalent
+# and avoids an extra module-level name.
 _UNSET = object()
-_INIT = object()
 
 
 class _StoreSource(Protocol):
@@ -104,6 +104,11 @@ class RecordingProxy(_RecorderMock):
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             return self._record(item, attr, args, kwargs)
 
+        # WHY: cache in __dict__ so repeated proxy.method lookups skip __getattr__.
+        # Alt: functools.partial — rejected because _record takes (method, bound,
+        # args, kwargs) not *args/**kwargs, so partial needs a calling-convention
+        # change; __dict__ caching needs none.
+        self.__dict__[item] = wrapper
         return wrapper
 
 
@@ -115,7 +120,10 @@ class PlayerProxy(_RecorderMock):
         # WHY: same rationale as RecordingProxy — store the source, not the store, so
         # non-function-scope fixtures can reload events when the test changes.
         self._source = source
-        self._last_nodeid: Any = _INIT  # _INIT != _UNSET → first _maybe_reload fires
+        # WHY: object() is unique at each construction → never equals _UNSET or None,
+        # so _maybe_reload always fires on the first call. Alt: module-level _INIT
+        # sentinel — removed; inline object() is equivalent with one less global name.
+        self._last_nodeid: Any = object()
         self._events: list[dict] = []
         self._pos = 0
         # WHY: eagerly load events and register for current test on construction
@@ -123,8 +131,8 @@ class PlayerProxy(_RecorderMock):
 
     def _maybe_reload(self) -> None:
         # WHY: _nodeid is a Controller attribute; plain RecordingStore has none, so
-        # getattr returns _UNSET. _UNSET != _INIT on first call → reload fires once.
-        # Subsequent calls on a store → _UNSET == _UNSET → no reload (correct).
+        # getattr returns _UNSET. _UNSET == _UNSET on subsequent calls → no reload.
+        # On construction _last_nodeid is a fresh object() → != _UNSET → fires once.
         # For Controller: nodeid changes per test → reload + re-register each time.
         current = getattr(self._source, "_nodeid", _UNSET)
         if current == self._last_nodeid:
@@ -181,4 +189,8 @@ class PlayerProxy(_RecorderMock):
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             return self._consume(item, args, kwargs)
 
+        # WHY: same rationale as RecordingProxy.__getattr__ — cache to avoid a new
+        # closure per access. Safe because _consume calls _maybe_reload on each call,
+        # so the cached wrapper still picks up test-boundary reloads correctly.
+        self.__dict__[item] = wrapper
         return wrapper
