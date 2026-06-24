@@ -7,7 +7,7 @@ from pytest_recorder.errors import (
     RecordingMismatch,
     RecordingUnderused,
 )
-from pytest_recorder.serialize import decode, encode, encode_exc
+from pytest_recorder.serialize import decode, encode, encode_exception
 from pytest_recorder.storage import RecordingStore
 
 # WHY: _INIT sentinel marks "never loaded" — distinct from _UNSET (used when source
@@ -41,9 +41,9 @@ def make_event(method, args, kwargs, ret, exc):
     """
     enc_args, enc_kwargs = _encode_call(args, kwargs)
     if exc is not None:
-        # FIN-1: encode_exc validates pickle round-trip now; encode() would let a bad
-        # pickle through silently, only failing at play time with a confusing TypeError.
-        outcome = {"return": None, "raised": encode_exc(exc)}
+        # FIN-1: encode_exception validates pickle round-trip; encode() would let
+        # a bad pickle through silently, only failing at play time with TypeError.
+        outcome = {"return": None, "raised": encode_exception(exc)}
     else:
         outcome = {"return": encode(ret), "raised": None}
     return {"method": method, "args": enc_args, "kwargs": enc_kwargs, **outcome}

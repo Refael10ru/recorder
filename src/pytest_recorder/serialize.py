@@ -17,7 +17,7 @@ def _is_envelope(obj: object) -> TypeGuard[dict]:
     return isinstance(obj, dict) and set(obj.keys()) == {_PICKLE_KEY}
 
 
-def encode_exc(exc: BaseException) -> object:
+def encode_exception(exc: BaseException) -> object:
     """Serialize an exception, failing loudly if it cannot survive a pickle round-trip.
 
     Validates at *record* time rather than letting the failure appear silently at
