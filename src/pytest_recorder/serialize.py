@@ -17,6 +17,14 @@ def _is_envelope(obj: object) -> TypeGuard[dict]:
     return isinstance(obj, dict) and set(obj.keys()) == {_PICKLE_KEY}
 
 
+def _wrap_blob(blob: bytes) -> dict:
+    # WHY: encode() and encode_exception() both produce the same envelope; this
+    # deduplicates the construction so a format change only touches one place.
+    # Alt: inline the dict literal in both — rejected because the copies can silently
+    # diverge if one is updated without the other.
+    return {_PICKLE_KEY: base64.b64encode(blob).decode("ascii")}
+
+
 def encode_exception(exc: BaseException) -> object:
     """Serialize an exception, failing loudly if it cannot survive a pickle round-trip.
 
@@ -45,7 +53,7 @@ def encode_exception(exc: BaseException) -> object:
             f"pickle round-trip changes args "
             f"(original={exc.args!r}, round-tripped={rt.args!r})"
         )
-    return {_PICKLE_KEY: base64.b64encode(blob).decode("ascii")}
+    return _wrap_blob(blob)  # WHY: reuse _wrap_blob instead of inlining the dict
 
 
 def encode(obj: object) -> object:
@@ -63,8 +71,7 @@ def encode(obj: object) -> object:
             pass
         else:
             return obj
-    blob = base64.b64encode(pickle.dumps(obj)).decode("ascii")
-    return {_PICKLE_KEY: blob}
+    return _wrap_blob(pickle.dumps(obj))  # WHY: reuse _wrap_blob, not inline dict
 
 
 def decode(val: object) -> Any:
