@@ -15,3 +15,9 @@
 - Maintain `CHANGELOG.md` at the repo root in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format (Unreleased → Added/Changed/Fixed/Removed sections).
 - Every code change that touches `src/` or `tests/` must include a corresponding `CHANGELOG.md` entry in the same commit.
 - Do NOT update the changelog for changes to `CLAUDE.md`, config files, or docs only.
+
+## Hard types — no duck typing
+
+- Use nominal types (class inheritance, Union) not structural/duck typing (Protocol, `getattr` probes).
+- When two modules cannot import each other, extract a shared ABC to `interfaces.py`; do not use `Protocol` as a workaround.
+- Never use `getattr(obj, "method", None)` to detect optional behaviour — put the method on the ABC with a no-op default impl.

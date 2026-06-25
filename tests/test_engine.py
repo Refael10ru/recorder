@@ -8,6 +8,7 @@ from pytest_recorder.errors import (
     RecordingUnderused,
 )
 from pytest_recorder.plugin import Controller
+from pytest_recorder.serialize import encode_exception
 from pytest_recorder.storage import RecordingStore, resolve_recording_path
 
 
@@ -241,3 +242,10 @@ def test_player_proxy_reloads_events_on_test_boundary(tmp_path):
     assert player.add(3, 4) == 7
     player.assert_consumed()
     ctrl.end_test()
+
+
+def test_encode_exception_succeeds_for_picklable_exception():
+    # Verifies encode_exception does not raise for a well-behaved exception
+    # (args passed to super().__init__), so the round-trip check has no false positives.
+    result = encode_exception(ValueError("well-behaved"))
+    assert isinstance(result, dict)
