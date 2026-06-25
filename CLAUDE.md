@@ -1,5 +1,11 @@
 # CLAUDE.md
 
+## Project map
+
+See [project_map.md](project_map.md) for the architecture overview, module
+responsibilities, data flow, and key design decisions. Keep it up to date when
+module boundaries or key decisions change.
+
 ## Linting
 
 - ruff runs with a curated `select` set (see `ruff.toml`).
