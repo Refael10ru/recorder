@@ -18,6 +18,11 @@ def _is_envelope(obj: object) -> TypeGuard[dict]:
 
 
 def _wrap_blob(blob: bytes) -> dict:
+    """Wrap raw pickle bytes in a JSON-safe envelope.
+
+    json.dumps rejects raw bytes, so the blob is base64-encoded to ASCII first.
+    The envelope key ``__pickle__`` lets decode() recognise it later.
+    """
     return {_PICKLE_KEY: base64.b64encode(blob).decode("ascii")}
 
 
@@ -65,8 +70,11 @@ def encode(obj: object) -> object:
 
 
 def decode(val: object) -> Any:
-    # WHY: return Any not object — pickle.loads is untyped and callers like
-    # `raise decode(exc_blob)` need the type narrowable to BaseException.
+    """Reverse encode(): unpack a pickle envelope or return the value unchanged.
+
+    Returns Any (not object) so callers that re-raise the result —
+    ``raise decode(ev["raised"])`` — can do so without a type-ignore.
+    """
     if _is_envelope(val):
         return pickle.loads(base64.b64decode(val[_PICKLE_KEY]))
     return val

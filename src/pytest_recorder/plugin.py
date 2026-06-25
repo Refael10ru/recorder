@@ -34,9 +34,9 @@ class Controller(StoreSource):
         self._store = None
         self._players = []
 
-    def test_id(self) -> object:
+    def test_id(self) -> str:
         """Return a stable per-test identifier; proxies reload events on change."""
-        return self._nodeid
+        return self._nodeid or ""
 
     def current_store(self) -> RecordingStore:
         """Lazily build (record) or load (play) this test's recording store."""

@@ -34,7 +34,7 @@ class _BlockSource(StoreSource):
     def current_store(self) -> RecordingStore:
         return self._ctrl.current_store()
 
-    def test_id(self) -> object:
+    def test_id(self) -> str:
         return self._ctrl.test_id()
 
     def register_player(self, player: Any) -> None:
