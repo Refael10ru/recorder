@@ -15,9 +15,32 @@ from collections.abc import Callable
 from types import ModuleType
 from typing import Any
 
-from pytest_recorder.engine import PlayerProxy, RecordingProxy, _encode_call
-from pytest_recorder.plugin import get_controller
-from pytest_recorder.storage import RecordingStore
+from pytest_recorder.engine import PlayerProxy, RecordingProxy
+from pytest_recorder.plugin import Controller, get_controller
+from pytest_recorder.serialize import _encode_call
+from pytest_recorder.storage import RecordingStore, StoreSource
+
+
+class _BlockSource(StoreSource):
+    """StoreSource shim that routes store/test_id to a Controller but collects
+    its own player list so record_class can assert at block exit instead of
+    relying on ctrl.end_test().
+    """
+
+    def __init__(self, ctrl: Controller) -> None:
+        self._ctrl = ctrl
+        self.players: list[Any] = []
+
+    def current_store(self) -> RecordingStore:
+        return self._ctrl.current_store()
+
+    def test_id(self) -> object:
+        return self._ctrl.test_id()
+
+    def register_player(self, player: Any) -> None:
+        # WHY: don't propagate to ctrl — record_class asserts at __exit__,
+        # not at teardown, so players must not appear in ctrl._players.
+        self.players.append(player)
 
 
 def _resolve(path: str) -> tuple[ModuleType, str]:
@@ -43,21 +66,20 @@ class record_class:
     def __init__(self, *paths: str) -> None:
         self._paths = paths
         self._patches: list[tuple[ModuleType, str, object]] = []
-        self._players: list[PlayerProxy] = []
+        self._source: _BlockSource | None = None
         self._counters: dict[str, int] = {}
 
     def __enter__(self) -> "record_class":
         self._patches = []
-        self._players = []
         self._counters = {}
         ctrl = get_controller()
         if ctrl.mode == "off":
             return self
-        store = ctrl.current_store()
+        self._source = _BlockSource(ctrl)
         for path in self._paths:
             module, attr = _resolve(path)
             original = getattr(module, attr)
-            replacement = self._make_replacement(ctrl.mode, path, original, store)
+            replacement = self._make_replacement(ctrl.mode, path, original)
             setattr(module, attr, replacement)
             self._patches.append((module, attr, original))
         return self
@@ -66,9 +88,10 @@ class record_class:
         for module, attr, original in reversed(self._patches):
             setattr(module, attr, original)
         self._patches = []
-        if exc_type is None:
-            for player in self._players:
+        if exc_type is None and self._source is not None:
+            for player in self._source.players:
                 player.assert_consumed()
+        self._source = None
 
     def __call__(self, func: Callable) -> Callable:
         @functools.wraps(func)
@@ -84,18 +107,17 @@ class record_class:
         self._counters[base] = idx + 1
         return f"{base}#{idx}"
 
-    def _make_replacement(
-        self, mode: str, path: str, original: Callable, store: RecordingStore
-    ) -> Callable:
+    def _make_replacement(self, mode: str, path: str, original: Callable) -> Callable:
+        source = self._source
+        assert source is not None
+
         def shim(*args: Any, **kwargs: Any) -> object:
             key = self._next_key(path, args, kwargs)
             if mode == "record":
                 # Wrap the instance so method calls on it are also recorded.
-                # Wrapping the class via __call__ instead would lose method recording.
-                return RecordingProxy(original(*args, **kwargs), key, store)
-            player = PlayerProxy(key, store)
-            self._players.append(player)
-            return player  # player replays method calls via __getattr__
+                return RecordingProxy(original(*args, **kwargs), key, source)
+            # source tracks players for __exit__ assertion (not ctrl).
+            return PlayerProxy(key, source)
 
         return shim
 
@@ -117,18 +139,17 @@ class record_function(record_class):
 
         return wrapper
 
-    def _make_replacement(
-        self, mode: str, path: str, original: Callable, store: RecordingStore
-    ) -> Callable:
+    def _make_replacement(self, mode: str, path: str, original: Callable) -> Callable:
+        source = self._source
+        assert source is not None
+
         def shim(*args: Any, **kwargs: Any) -> object:
             key = self._next_key(path, args, kwargs)
             if mode == "record":
                 # Wrap the callable, not its return value: __call__ records and
                 # returns the real result. record_class wraps the instance instead.
-                return RecordingProxy(original, key, store)(*args, **kwargs)
-            player = PlayerProxy(key, store)
-            self._players.append(player)
-            # Consume the __call__ event and return the recorded value directly.
+                return RecordingProxy(original, key, source)(*args, **kwargs)
+            player = PlayerProxy(key, source)
             return player(*args, **kwargs)
 
         return shim
