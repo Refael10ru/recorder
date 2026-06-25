@@ -1,55 +1,68 @@
-# targets.py — record_class / record_function
+# targets.py
 
-Imports: `engine`, `plugin`, `storage`.
+## Public API (used by __init__, test code)
 
-## record_class
-
-Context manager and decorator. On `__enter__`:
-
-1. Calls `get_controller()` and short-circuits if mode is `"off"`.
-2. For each import path (e.g. `"mylib.api.Client"`):
-   - Resolves the module and attribute via `_resolve`.
-   - Replaces the attribute with a shim (see below).
-   - Saves the original for restoration in `__exit__`.
-
-On `__exit__`: restores all originals in reverse order; if no exception, calls
-`assert_consumed()` on every `PlayerProxy` that was created.
-
-### Shim behaviour (record_class._make_replacement)
-
-```
-record mode → shim(*args) returns RecordingProxy(original(*args), key, store)
-play mode   → shim(*args) returns PlayerProxy(key, store)
+```python
+from pytest_recorder.targets import record_class, record_function   # re-exported by __init__
+from pytest_recorder import record_class, record_function           # user-facing import
 ```
 
-In record mode the **instance** is wrapped (not the class). Wrapping the class
-via `__call__` would lose method recording.
+| Symbol | Purpose |
+|---|---|
+| `record_class(*paths)` | Context manager / decorator; records method calls on constructed instances |
+| `record_function(*paths)` | Context manager / decorator; records the call itself for plain callables |
 
-### Key disambiguation (_next_key)
+Both accept one or more import paths as strings (e.g. `"mylib.api.Client"`).
+Both work as context managers and as decorators.
 
-Each call to the same constructor with the same args gets a unique stream key:
-`"path(encoded_args)#0"`, `"path(encoded_args)#1"`, etc. The counter is
-per-instance and resets each time the context manager is entered.
+## Internals
 
-## record_function
+### record_class
 
-Inherits from `record_class`. Overrides:
+On `__enter__`:
 
-- `_make_replacement` — wraps the **callable itself** (not the return value):
-  - record: `RecordingProxy(original, key, store)(*args)` — records the call and returns the real result.
-  - play: `PlayerProxy(key, store)(*args)` — consumes one `__call__` event and returns the recorded value.
+1. Calls `get_controller()`; short-circuits (no-op) if mode is `"off"`.
+2. For each path: resolves module + attribute, replaces it with a shim, saves
+   the original for restoration.
+
+On `__exit__`: restores all originals in reverse order; on clean exit calls
+`assert_consumed()` on every `PlayerProxy` created during the block.
+
+**Shim behaviour:**
+
+```
+record mode → shim(*args) → RecordingProxy(original(*args), key, store)
+play mode   → shim(*args) → PlayerProxy(key, store)
+```
+
+In record mode the **instance** is wrapped, not the class. Wrapping the class
+via `__call__` would lose method recording on the returned object.
+
+### record_function
+
+Inherits `record_class`. Overrides two methods:
+
+- `_make_replacement` — wraps the **callable itself**:
+  - record: `RecordingProxy(original, key, store)(*args)` — records the call, returns real result.
+  - play: `PlayerProxy(key, store)(*args)` — consumes one `__call__` event, returns recorded value.
 - `__call__` (decorator form) — re-enters `record_function`, not `record_class`.
 
-Use `record_function` for module-level functions like `wikipedia.search`; use
+Use `record_function` for module-level functions (e.g. `wikipedia.search`); use
 `record_class` for classes/factories where method calls on the returned instance
-need to be captured.
+also need to be captured.
 
-## _resolve(path)
+### Key disambiguation
 
-Splits `"pkg.mod.Name"` at the last `.` and imports the module. Returns
-`(module, attr_name)`. Standard importlib; no caching.
+Each call to the same constructor/function with the same args gets a unique
+stream key: `"path(encoded_args)#0"`, `"path(encoded_args)#1"`, etc. The per-
+instance `_counters` dict resets each time the context manager is entered.
 
-## _base_key(path, args, kwargs)
+### _resolve(path)
 
-Stable identifier for one construction: the import path plus the JSON-encoded
-constructor args. Used as the base for `_next_key` before the `#N` suffix.
+Splits `"pkg.mod.Name"` at the last `.` and imports the module via `importlib`.
+Returns `(module, attr_name)`.
+
+### _base_key(path, args, kwargs)
+
+Stable identifier for one construction: import path + JSON-encoded constructor
+args. `_encode_call` (imported from engine) is used for the encoding.

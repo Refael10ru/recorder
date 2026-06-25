@@ -1,38 +1,47 @@
-# storage.py — Path resolution and event buffer
+# storage.py
 
-No recorder dependencies.
+## Public API (used by engine, plugin, targets)
 
-## resolve_recording_path
-
-Pure function. Maps a pytest nodeid + test file path to a `.json` path inside a
-`recordings/` directory next to the test module.
-
-```
-nodeid:    tests/mockproj/test_depth.py::test_flat_object
-test_file: /proj/tests/mockproj/test_depth.py
-→          /proj/tests/mockproj/recordings/test_depth__test_flat_object.json
+```python
+from pytest_recorder.storage import resolve_recording_path, RecordingStore
 ```
 
-All non-alphanumeric characters in the key become `_` so the filename is always
-filesystem-safe. The `recordings/` dir is next to the test file (not a project
-root dir) so recordings travel with the test when it's moved.
+### `resolve_recording_path(nodeid, test_file) -> Path`
 
-## RecordingStore
+Maps a pytest nodeid + test file path to a `.json` recording path.
+
+```
+nodeid:    "tests/mockproj/test_depth.py::test_flat_object"
+test_file: Path("/proj/tests/mockproj/test_depth.py")
+→          Path("/proj/tests/mockproj/recordings/test_depth__test_flat_object.json")
+```
+
+### `RecordingStore(path)`
 
 In-memory `{fixture_name: [event, ...]}` dict backed by a JSON file.
 
-- `append(name, event)` — buffer one event (record mode).
-- `events(name)` — return buffered events; empty list if name not found.
-- `load()` — read from disk into `_data`.
-- `flush()` — write `_data` to disk; creates parent dirs if needed.
+| Method | Mode | Purpose |
+|---|---|---|
+| `append(name, event)` | record | Buffer one event |
+| `events(name) -> list[dict]` | play | Return buffered events; empty list if absent |
+| `load()` | play | Read `.json` from disk into `_data` |
+| `flush()` | record | Write `_data` to disk; creates parent dirs |
+| `current_store() -> RecordingStore` | both | Returns `self` (see internals) |
+
+## Internals
+
+### Recording file location
+
+Recordings live in `recordings/` **beside the test module**, not at the project
+root. This means they travel with the test when it is moved or copied. All
+non-alphanumeric characters in the key become `_` for filesystem safety.
 
 ### current_store() shim
 
-`current_store()` returns `self`. It exists solely so `RecordingStore` satisfies
-the `_StoreSource` Protocol defined in `engine.py` without needing to import the
-engine. Both `RecordingStore` and `Controller` expose `current_store()`; engine
-code calls it on whichever it holds without an `isinstance` branch.
+`current_store()` returns `self`. It exists so `RecordingStore` satisfies the
+`_StoreSource` Protocol defined in `engine.py` without importing the engine.
+Both `RecordingStore` and `Controller` expose `current_store()`; engine proxies
+call it on whichever they hold without an `isinstance` branch.
 
 Why not `isinstance`? Engine importing `Controller` from plugin would create a
-circular import (`engine → plugin → engine`). The Protocol + shim pattern avoids
-this entirely.
+circular import (`engine → plugin → engine`). The Protocol + shim avoids this.
