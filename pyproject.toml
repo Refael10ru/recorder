@@ -28,6 +28,11 @@ files = ["src", "tests"]
 module = ["pandas"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# wikipedia ships no type stubs; used only in the WIKI-1 regression test.
+module = ["wikipedia"]
+ignore_missing_imports = true
+
 [dependency-groups]
 dev = [
     "mypy>=2.1.0",

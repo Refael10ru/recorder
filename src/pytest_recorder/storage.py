@@ -3,6 +3,12 @@
 import json
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from pytest_recorder.interfaces import StoreSource
+
+if TYPE_CHECKING:
+    from pytest_recorder.engine import PlayerProxy
 
 
 def resolve_recording_path(nodeid: str, test_file: Path) -> Path:
@@ -20,7 +26,7 @@ def resolve_recording_path(nodeid: str, test_file: Path) -> Path:
     return test_file.parent / "recordings" / f"{safe}.json"
 
 
-class RecordingStore:
+class RecordingStore(StoreSource):
     """Holds {fixture_name: [event, ...]} for one test; loads/saves JSON."""
 
     def __init__(self, path: Path) -> None:
@@ -39,6 +45,18 @@ class RecordingStore:
         """Read the recording file into memory."""
         with self.path.open() as fh:
             self._data = json.load(fh)
+
+    def current_store(self) -> "RecordingStore":
+        return self
+
+    def test_id(self) -> object:
+        # WHY: return self so the proxy's _last_test_id stays equal across calls
+        # (same store object → same identity) → no spurious reload after the first.
+        return self
+
+    def register_player(self, player: "PlayerProxy") -> None:
+        pass  # WHY: no-op — RecordingStore has no per-test lifecycle; callers that
+        # use RecordingStore directly call player.assert_consumed() themselves.
 
     def flush(self) -> None:
         """Write buffered events to the recording file as JSON."""

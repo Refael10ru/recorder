@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pytest_recorder.engine import PlayerProxy
 from pytest_recorder.errors import MissingRecording
+from pytest_recorder.interfaces import StoreSource  # WHY: explicit ABC not duck typing
 from pytest_recorder.storage import RecordingStore, resolve_recording_path
 
 _CONTROLLER: "Controller | None" = None
@@ -17,7 +18,7 @@ def get_controller() -> "Controller":
     return _CONTROLLER
 
 
-class Controller:
+class Controller(StoreSource):  # WHY: explicit ABC inheritance, not duck typing
     """Holds recorder mode + per-test store; flushes/asserts at teardown."""
 
     def __init__(self, mode: str) -> None:
@@ -33,6 +34,11 @@ class Controller:
         self._test_file = test_file
         self._store = None
         self._players = []
+
+    def test_id(self) -> object:
+        # WHY: return _nodeid so PlayerProxy detects test boundaries;
+        # changes on begin_test → triggers reload + re-register.
+        return self._nodeid
 
     def current_store(self) -> RecordingStore:
         """Lazily build (record) or load (play) this test's recording store."""
