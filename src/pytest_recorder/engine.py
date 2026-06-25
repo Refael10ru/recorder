@@ -1,11 +1,14 @@
 """Record/replay engine: RecordingProxy and PlayerProxy over an explicit store."""
 
+from typing import Any
+
 from pytest_recorder.errors import (
     RecordingExhausted,
     RecordingMismatch,
     RecordingUnderused,
 )
-from pytest_recorder.serialize import decode, encode
+from pytest_recorder.interfaces import StoreSource
+from pytest_recorder.serialize import decode, encode, encode_exception
 
 
 def _encode_call(args, kwargs):
@@ -20,7 +23,9 @@ def make_event(method, args, kwargs, ret, exc):
     """
     enc_args, enc_kwargs = _encode_call(args, kwargs)
     if exc is not None:
-        outcome = {"return": None, "raised": encode(exc)}
+        # FIN-1: encode_exception validates pickle round-trip; encode() would let
+        # a bad pickle through silently, only failing at play time with TypeError.
+        outcome = {"return": None, "raised": encode_exception(exc)}
     else:
         outcome = {"return": encode(ret), "raised": None}
     return {"method": method, "args": enc_args, "kwargs": enc_kwargs, **outcome}
@@ -40,27 +45,33 @@ class _RecorderMock:
 class RecordingProxy(_RecorderMock):
     """Wrap a real target; record each call, then return/re-raise as normal."""
 
-    def __init__(self, target, name, store):
+    def __init__(self, target: Any, name: str, source: StoreSource) -> None:
         self._target = target
         self._name = name
-        self._store = store
+        # WHY: store source not store — source.current_store() per call means
+        # non-function-scope fixtures route each test's calls to the right file
+        # as the active test changes. Locking to a store at construction would
+        # send all calls to the first test's recording (SCP-1 bug).
+        self._source = source
 
-    def _record(self, method, bound, args, kwargs):
+    def _record(self, method: str, bound: Any, args: tuple, kwargs: dict) -> Any:
         exc = None
         ret = None
         try:
             ret = bound(*args, **kwargs)
         except Exception as e:
             exc = e
-        self._store.append(self._name, make_event(method, args, kwargs, ret, exc))
+        self._source.current_store().append(
+            self._name, make_event(method, args, kwargs, ret, exc)
+        )
         if exc is not None:
             raise exc
         return ret
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._record("__call__", self._target, args, kwargs)
 
-    def __getattr__(self, item):
+    def __getattr__(self, item: str) -> Any:
         attr = getattr(self._target, item)
         if not callable(attr):
             msg = (
@@ -69,21 +80,43 @@ class RecordingProxy(_RecorderMock):
             )
             raise AttributeError(msg)
 
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             return self._record(item, attr, args, kwargs)
 
+        # WHY: cache in __dict__ so repeated proxy.method lookups skip __getattr__.
+        # Alt: functools.partial — rejected because _record takes (method, bound,
+        # args, kwargs) not *args/**kwargs, so partial needs a calling-convention
+        # change; __dict__ caching needs none.
+        self.__dict__[item] = wrapper
         return wrapper
 
 
 class PlayerProxy(_RecorderMock):
     """Replay recorded events in strict order; holds no real target."""
 
-    def __init__(self, name, store):
+    def __init__(self, name: str, source: StoreSource) -> None:
         self._name = name
-        self._events = list(store.events(name))
+        # WHY: store source not store — same rationale as RecordingProxy.
+        self._source = source
+        # WHY: object() is unique per construction, never equal to any real
+        # test_id() value, so _maybe_reload always fires on the first call.
+        self._last_test_id: object = object()
+        self._events: list[dict] = []
         self._pos = 0
+        self._maybe_reload()
 
-    def _consume(self, method, args, kwargs):
+    def _maybe_reload(self) -> None:
+        current = self._source.test_id()
+        if current == self._last_test_id:
+            return
+        self._events = list(self._source.current_store().events(self._name))
+        self._pos = 0
+        self._last_test_id = current
+        # WHY: no-op for RecordingStore; re-registers per test for Controller.
+        self._source.register_player(self)
+
+    def _consume(self, method: str, args: tuple, kwargs: dict) -> Any:
+        self._maybe_reload()
         if self._pos >= len(self._events):
             msg = f"recorder: '{self._name}.{method}' called but recording is exhausted"
             raise RecordingExhausted(msg)
@@ -108,7 +141,7 @@ class PlayerProxy(_RecorderMock):
             raise decode(ev["raised"])
         return decode(ev["return"])
 
-    def assert_consumed(self):
+    def assert_consumed(self) -> None:
         """Raise if the test used fewer recorded events than exist."""
         if self._pos != len(self._events):
             msg = (
@@ -117,11 +150,15 @@ class PlayerProxy(_RecorderMock):
             )
             raise RecordingUnderused(msg)
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._consume("__call__", args, kwargs)
 
-    def __getattr__(self, item):
-        def wrapper(*args, **kwargs):
+    def __getattr__(self, item: str) -> Any:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             return self._consume(item, args, kwargs)
 
+        # WHY: same rationale as RecordingProxy.__getattr__ — cache to avoid a new
+        # closure per access. Safe because _consume calls _maybe_reload on each call,
+        # so the cached wrapper still picks up test-boundary reloads correctly.
+        self.__dict__[item] = wrapper
         return wrapper
