@@ -9,3 +9,9 @@
 
 - `uv run mypy` must pass (config in `pyproject.toml` `[tool.mypy]`; checks `src` and `tests`).
 - Prefer real type annotations and narrowing (`isinstance`, `TypeGuard`) over `# type: ignore`. Do not add `# type: ignore` without explicit user approval.
+
+## Changelog
+
+- Maintain `CHANGELOG.md` at the repo root in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format (Unreleased → Added/Changed/Fixed/Removed sections).
+- Every code change that touches `src/` or `tests/` must include a corresponding `CHANGELOG.md` entry in the same commit.
+- Do NOT update the changelog for changes to `CLAUDE.md`, config files, or docs only.
