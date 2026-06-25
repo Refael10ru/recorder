@@ -1,32 +1,14 @@
 """Record/replay engine: RecordingProxy and PlayerProxy over an explicit store."""
 
-from typing import Any, Protocol
+from typing import Any
 
 from pytest_recorder.errors import (
     RecordingExhausted,
     RecordingMismatch,
     RecordingUnderused,
 )
+from pytest_recorder.interfaces import StoreSource
 from pytest_recorder.serialize import decode, encode, encode_exception
-from pytest_recorder.storage import RecordingStore
-
-# WHY: _UNSET is the getattr() default for sources without _nodeid (RecordingStore).
-# PlayerProxy.__init__ sets _last_nodeid = object() — unique per construction,
-# guaranteed != _UNSET — so _maybe_reload always fires on the first call.
-# Alt: keep a second _INIT sentinel — removed; inline object() is equivalent
-# and avoids an extra module-level name.
-_UNSET = object()
-
-
-class _StoreSource(Protocol):
-    """Duck-type contract shared by RecordingStore and Controller.
-
-    WHY Protocol not ABC: engine must not import Controller (that creates a circular
-    import via plugin → engine). Protocol lets mypy verify structural compatibility
-    without a runtime dependency.
-    """
-
-    def current_store(self) -> RecordingStore: ...
 
 
 def _encode_call(args, kwargs):
@@ -52,15 +34,13 @@ def make_event(method, args, kwargs, ret, exc):
 class RecordingProxy:
     """Wrap a real target; record each call, then return/re-raise as normal."""
 
-    def __init__(self, target: Any, name: str, source: _StoreSource) -> None:
+    def __init__(self, target: Any, name: str, source: StoreSource) -> None:
         self._target = target
         self._name = name
-        # WHY: store the source (Controller or RecordingStore), not the store itself.
-        # Calling source.current_store() per call means non-function-scoped fixtures
-        # (session/module/class) automatically route each test's calls to the right
-        # recording file as the Controller's current test changes between calls.
-        # Alternative: lock to store at construction (old behaviour) — broken for any
-        # scope wider than function: all calls land in the first test's recording.
+        # WHY: store source not store — source.current_store() per call means
+        # non-function-scope fixtures route each test's calls to the right file
+        # as the active test changes. Locking to a store at construction would
+        # send all calls to the first test's recording (SCP-1 bug).
         self._source = source
 
     def _record(self, method: str, bound: Any, args: tuple, kwargs: dict) -> Any:
@@ -70,7 +50,6 @@ class RecordingProxy:
             ret = bound(*args, **kwargs)
         except Exception as e:
             exc = e
-        # WHY: .current_store() lookup per call — see __init__ comment.
         self._source.current_store().append(
             self._name, make_event(method, args, kwargs, ret, exc)
         )
@@ -104,40 +83,29 @@ class RecordingProxy:
 class PlayerProxy:
     """Replay recorded events in strict order; holds no real target."""
 
-    def __init__(self, name: str, source: _StoreSource) -> None:
+    def __init__(self, name: str, source: StoreSource) -> None:
         self._name = name
-        # WHY: same rationale as RecordingProxy — store the source, not the store, so
-        # non-function-scope fixtures can reload events when the test changes.
+        # WHY: store source not store — same rationale as RecordingProxy.
         self._source = source
-        # WHY: object() is unique at each construction → never equals _UNSET or None,
-        # so _maybe_reload always fires on the first call. Alt: module-level _INIT
-        # sentinel — removed; inline object() is equivalent with one less global name.
-        self._last_nodeid: Any = object()
+        # WHY: object() is unique per construction, never equal to any real
+        # test_id() value, so _maybe_reload always fires on the first call.
+        self._last_test_id: object = object()
         self._events: list[dict] = []
         self._pos = 0
-        # WHY: eagerly load events and register for current test on construction
         self._maybe_reload()
 
     def _maybe_reload(self) -> None:
-        # WHY: _nodeid is a Controller attribute; plain RecordingStore has none, so
-        # getattr returns _UNSET. _UNSET == _UNSET on subsequent calls → no reload.
-        # On construction _last_nodeid is a fresh object() → != _UNSET → fires once.
-        # For Controller: nodeid changes per test → reload + re-register each time.
-        current = getattr(self._source, "_nodeid", _UNSET)
-        if current == self._last_nodeid:
+        current = self._source.test_id()
+        if current == self._last_test_id:
             return
         self._events = list(self._source.current_store().events(self._name))
         self._pos = 0
-        self._last_nodeid = current
-        # WHY: re-register with the controller so assert_consumed is checked per test.
-        # For plain RecordingStore, register_player doesn't exist → skip (caller must
-        # call assert_consumed explicitly, as all existing direct-use tests do).
-        register = getattr(self._source, "register_player", None)
-        if register is not None:
-            register(self)
+        self._last_test_id = current
+        # WHY: no-op for RecordingStore; re-registers per test for Controller.
+        self._source.register_player(self)
 
     def _consume(self, method: str, args: tuple, kwargs: dict) -> Any:
-        self._maybe_reload()  # WHY: cross test boundary before consuming if needed
+        self._maybe_reload()
         if self._pos >= len(self._events):
             msg = f"recorder: '{self._name}.{method}' called but recording is exhausted"
             raise RecordingExhausted(msg)
