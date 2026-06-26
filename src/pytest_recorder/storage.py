@@ -1,21 +1,29 @@
 """Recording file path resolution, event types, and per-test event store."""
 
+import dataclasses
 import json
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 
-EncodedEvent = TypedDict(
-    "EncodedEvent",
-    {
-        "method": str,
-        "args": list[Any],
-        "kwargs": dict[str, Any],
-        "return": Any,
-        "raised": Any,
-    },
-)
+
+@dataclasses.dataclass(slots=True)
+class EncodedEvent:
+    """One recorded call in its serialized (JSON-safe) form.
+
+    ``result`` holds the encoded return value; ``raised`` holds an encoded
+    exception envelope. Exactly one is non-None per event.
+
+    Named ``result`` (not ``return``) because ``return`` is a Python keyword
+    and cannot be a dataclass field name.
+    """
+
+    method: str
+    args: list[Any]
+    kwargs: dict[str, Any]
+    result: Any
+    raised: Any
 
 
 class StoreSource(ABC):
@@ -75,7 +83,7 @@ def resolve_recording_path(nodeid: str, test_file: Path) -> Path:
 
 
 class RecordingStore(StoreSource):
-    """Holds {fixture_name: [event, ...]} for one test; loads/saves JSON."""
+    """Holds {fixture_name: [EncodedEvent, ...]} for one test; loads/saves JSON."""
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
@@ -92,7 +100,11 @@ class RecordingStore(StoreSource):
     def load(self) -> None:
         """Read the recording file into memory."""
         with self.path.open() as fh:
-            self._data = json.load(fh)
+            raw: dict[str, list[dict[str, Any]]] = json.load(fh)
+        self._data = {
+            name: [EncodedEvent(**ev) for ev in evs]
+            for name, evs in raw.items()
+        }
 
     def current_store(self) -> "RecordingStore":
         return self
@@ -107,5 +119,9 @@ class RecordingStore(StoreSource):
     def flush(self) -> None:
         """Write buffered events to the recording file as JSON."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        raw = {
+            name: [dataclasses.asdict(ev) for ev in evs]
+            for name, evs in self._data.items()
+        }
         with self.path.open("w") as fh:
-            json.dump(self._data, fh, indent=2)
+            json.dump(raw, fh, indent=2)

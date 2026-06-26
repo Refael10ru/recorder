@@ -39,17 +39,17 @@ def test_recording_proxy_records_method_call(tmp_path):
     proxy = RecordingProxy(Calc(), "calc", store)
     assert proxy.add(2, 3) == 5
     ev = store.events("calc")[0]
-    assert ev["method"] == "add"
-    assert ev["args"] == [2, 3]
-    assert ev["return"] == 5
-    assert ev["raised"] is None
+    assert ev.method == "add"
+    assert ev.args == [2, 3]
+    assert ev.result == 5
+    assert ev.raised is None
 
 
 def test_recording_proxy_records_callable(tmp_path):
     store = RecordingStore(tmp_path / "r.json")
     proxy = RecordingProxy(lambda x: x * 2, "double", store)
     assert proxy(4) == 8
-    assert store.events("double")[0]["method"] == "__call__"
+    assert store.events("double")[0].method == "__call__"
 
 
 def test_recording_proxy_records_and_reraises_exception(tmp_path):
@@ -58,8 +58,8 @@ def test_recording_proxy_records_and_reraises_exception(tmp_path):
     with pytest.raises(ValueError):
         proxy.boom()
     ev = store.events("calc")[0]
-    assert ev["return"] is None
-    assert ev["raised"] is not None
+    assert ev.result is None
+    assert ev.raised is not None
 
 
 def _recorded_store(tmp_path):
@@ -174,8 +174,8 @@ def test_recording_proxy_routes_each_test_to_its_own_store(tmp_path):
     s1, s2 = RecordingStore(p1), RecordingStore(p2)
     s1.load()
     s2.load()
-    assert [e["args"] for e in s1.events("calc")] == [[1, 2]]
-    assert [e["args"] for e in s2.events("calc")] == [[3, 4]]
+    assert [e.args for e in s1.events("calc")] == [[1, 2]]
+    assert [e.args for e in s2.events("calc")] == [[3, 4]]
 
 
 def test_player_proxy_reloads_events_on_test_boundary(tmp_path):

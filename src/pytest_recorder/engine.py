@@ -18,14 +18,14 @@ def make_event(
     enc_args, enc_kwargs = _encode_call(args, kwargs)
     if exc is not None:
         # FIN-1: encode_exception validates pickle round-trip at record time.
-        return {
-            "method": method, "args": enc_args, "kwargs": enc_kwargs,
-            "return": None, "raised": encode_exception(exc),
-        }
-    return {
-        "method": method, "args": enc_args, "kwargs": enc_kwargs,
-        "return": encode(ret), "raised": None,
-    }
+        return EncodedEvent(
+            method=method, args=enc_args, kwargs=enc_kwargs,
+            result=None, raised=encode_exception(exc),
+        )
+    return EncodedEvent(
+        method=method, args=enc_args, kwargs=enc_kwargs,
+        result=encode(ret), raised=None,
+    )
 
 
 def is_recorder_mock(obj: object) -> bool:
@@ -89,9 +89,9 @@ class PlayerProxy(_RecorderMock):
         self._name = name
         # WHY: hold source not a fixed store — same rationale as RecordingProxy.
         self._source = source
-        # WHY: object() is unique per construction, never equal to any real
-        # test_id() return, so _maybe_reload always fires on the first call.
-        self._last_test_id: object = object()
+        # WHY: sentinel string that no real test_id() can return, so
+        # _maybe_reload always fires on the first call.
+        self._last_test_id = "\x00"
         self._events: list[EncodedEvent] = []
         self._pos = 0
         self._maybe_reload()
@@ -114,7 +114,7 @@ class PlayerProxy(_RecorderMock):
         self._pos += 1
         # Match on ENCODED forms — decoded numpy/pandas raises "truth value ambiguous".
         live_args, live_kwargs = _encode_call(args, kwargs)
-        expected = (ev["method"], ev["args"], ev["kwargs"])
+        expected = (ev.method, ev.args, ev.kwargs)
         actual = (method, live_args, live_kwargs)
         if expected != actual:
             exp_m, exp_a, exp_k = expected
@@ -124,9 +124,9 @@ class PlayerProxy(_RecorderMock):
                 f"  got:      {method}(args={live_args}, kwargs={live_kwargs})"
             )
             raise RecordingMismatch(msg)
-        if ev["raised"] is not None:
-            raise decode(ev["raised"])
-        return decode(ev["return"])
+        if ev.raised is not None:
+            raise decode(ev.raised)
+        return decode(ev.result)
 
     def assert_consumed(self) -> None:
         """Raise if the test used fewer recorded events than exist."""

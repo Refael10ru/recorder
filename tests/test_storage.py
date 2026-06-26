@@ -18,11 +18,10 @@ def test_store_source_is_abstract_base() -> None:
     assert issubclass(RecordingStore, StoreSource)
 
 
-def test_encoded_event_is_typed_dict() -> None:
-    ev: EncodedEvent = {
-        "method": "add", "args": [1], "kwargs": {}, "return": 1, "raised": None
-    }
-    assert ev["method"] == "add"
+def test_encoded_event_is_dataclass() -> None:
+    ev = EncodedEvent(method="add", args=[1], kwargs={}, result=1, raised=None)
+    assert ev.method == "add"
+    assert ev.result == 1
 
 
 def test_store_append_flush_load(tmp_path):
@@ -30,12 +29,12 @@ def test_store_append_flush_load(tmp_path):
     s = RecordingStore(path)
     s.append(
         "calc",
-        {"method": "add", "args": [1, 2], "kwargs": {}, "return": 3, "raised": None},
+        EncodedEvent(method="add", args=[1, 2], kwargs={}, result=3, raised=None),
     )
     s.flush()
     assert path.exists()
 
     s2 = RecordingStore(path)
     s2.load()
-    assert s2.events("calc")[0]["return"] == 3
+    assert s2.events("calc")[0].result == 3
     assert s2.events("missing") == []

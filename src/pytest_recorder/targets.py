@@ -108,6 +108,12 @@ class record_class:
         return f"{base}#{idx}"
 
     def _make_replacement(self, mode: str, path: str, original: Callable) -> Callable:
+        """Build the shim that replaces the class/factory at ``path``.
+
+        Wraps the constructed **instance** in a proxy so individual method calls
+        on it are the recorded events. record_function overrides this to wrap
+        the callable itself instead (the call is the event, not the methods).
+        """
         source = self._source
         assert source is not None
 
@@ -140,6 +146,13 @@ class record_function(record_class):
         return wrapper
 
     def _make_replacement(self, mode: str, path: str, original: Callable) -> Callable:
+        """Build the shim that replaces the callable at ``path``.
+
+        Unlike record_class (which wraps the constructed instance), this wraps
+        the callable itself: each call to the patched symbol is one event, and
+        the recorded return value is replayed immediately. No instance proxy
+        survives the call.
+        """
         source = self._source
         assert source is not None
 
