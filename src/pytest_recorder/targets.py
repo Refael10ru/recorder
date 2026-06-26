@@ -108,16 +108,16 @@ class record_class:
         return f"{base}#{idx}"
 
     def _make_replacement(self, mode: str, path: str, original: Callable) -> Callable:
-        """Build the shim that replaces the class/factory at ``path``.
+        """Build the ctor_proxy that replaces the class/factory at ``path``.
 
         Wraps the constructed **instance** in a proxy so individual method calls
-        on it are the recorded events. record_function overrides this to wrap
-        the callable itself instead (the call is the event, not the methods).
+        on it are the recorded events. record_function overrides this to return
+        the proxy directly instead (the call is the event, not the methods).
         """
         source = self._source
         assert source is not None
 
-        def shim(*args: Any, **kwargs: Any) -> object:
+        def ctor_proxy(*args: Any, **kwargs: Any) -> object:
             key = self._next_key(path, args, kwargs)
             if mode == "record":
                 # Wrap the instance so method calls on it are also recorded.
@@ -125,7 +125,7 @@ class record_class:
             # source tracks players for __exit__ assertion (not ctrl).
             return PlayerProxy(key, source)
 
-        return shim
+        return ctor_proxy
 
 
 class record_function(record_class):
@@ -146,23 +146,16 @@ class record_function(record_class):
         return wrapper
 
     def _make_replacement(self, mode: str, path: str, original: Callable) -> Callable:
-        """Build the shim that replaces the callable at ``path``.
+        """Return the proxy directly as the callable replacement.
 
-        Unlike record_class (which wraps the constructed instance), this wraps
-        the callable itself: each call to the patched symbol is one event, and
-        the recorded return value is replayed immediately. No instance proxy
-        survives the call.
+        Unlike record_class (which needs a ctor_proxy to intercept construction
+        and wrap the returned instance), record_function's recorded unit is the
+        call itself — so the proxy IS the replacement. Both RecordingProxy and
+        PlayerProxy implement __call__, preserving the function's callable contract.
+        Mode is decided here at patch time, not per-call.
         """
         source = self._source
         assert source is not None
-
-        def shim(*args: Any, **kwargs: Any) -> object:
-            key = self._next_key(path, args, kwargs)
-            if mode == "record":
-                # Wrap the callable, not its return value: __call__ records and
-                # returns the real result. record_class wraps the instance instead.
-                return RecordingProxy(original, key, source)(*args, **kwargs)
-            player = PlayerProxy(key, source)
-            return player(*args, **kwargs)
-
-        return shim
+        if mode == "record":
+            return RecordingProxy(original, path, source)
+        return PlayerProxy(path, source)

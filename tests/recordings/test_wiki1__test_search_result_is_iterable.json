@@ -1,5 +1,5 @@
 {
-  "wikipedia.search([[\"Python programming language\"], {}])#0": [
+  "wikipedia.search": [
     {
       "method": "__call__",
       "args": [
