@@ -7,7 +7,17 @@ from pytest_recorder.errors import (
     RecordingMismatch,
     RecordingUnderused,
 )
-from pytest_recorder.storage import RecordingStore
+from pytest_recorder.plugin import Controller
+from pytest_recorder.storage import RecordingStore, resolve_recording_path
+
+
+class _BadPickleError(Exception):
+    def __init__(self, code: int) -> None:
+        super().__init__()
+        self.code = code
+
+
+_FAKE_FILE = "fake_test.py"
 
 
 class Calc:
@@ -16,6 +26,9 @@ class Calc:
 
     def boom(self):
         raise ValueError("nope")
+
+    def bad_boom(self) -> None:
+        raise _BadPickleError(401)
 
     def first(self, arr):
         return int(arr[0])
@@ -26,17 +39,17 @@ def test_recording_proxy_records_method_call(tmp_path):
     proxy = RecordingProxy(Calc(), "calc", store)
     assert proxy.add(2, 3) == 5
     ev = store.events("calc")[0]
-    assert ev["method"] == "add"
-    assert ev["args"] == [2, 3]
-    assert ev["return"] == 5
-    assert ev["raised"] is None
+    assert ev.method == "add"
+    assert ev.args == [2, 3]
+    assert ev.result == 5
+    assert ev.raised is None
 
 
 def test_recording_proxy_records_callable(tmp_path):
     store = RecordingStore(tmp_path / "r.json")
     proxy = RecordingProxy(lambda x: x * 2, "double", store)
     assert proxy(4) == 8
-    assert store.events("double")[0]["method"] == "__call__"
+    assert store.events("double")[0].method == "__call__"
 
 
 def test_recording_proxy_records_and_reraises_exception(tmp_path):
@@ -45,8 +58,8 @@ def test_recording_proxy_records_and_reraises_exception(tmp_path):
     with pytest.raises(ValueError):
         proxy.boom()
     ev = store.events("calc")[0]
-    assert ev["return"] is None
-    assert ev["raised"] is not None
+    assert ev.result is None
+    assert ev.raised is not None
 
 
 def _recorded_store(tmp_path):
@@ -132,6 +145,60 @@ def test_is_recorder_mock_plain_object():
     assert is_recorder_mock(Calc()) is False
     assert is_recorder_mock(object()) is False
     assert is_recorder_mock(42) is False
+
+
+def test_recording_fails_loudly_for_non_picklable_exception(tmp_path):
+    # FIN-1: record must raise RuntimeError immediately, not store a bad pickle.
+    store = RecordingStore(tmp_path / "r.json")
+    proxy = RecordingProxy(Calc(), "calc", store)
+    with pytest.raises(RuntimeError, match="cannot record"):
+        proxy.bad_boom()
+
+
+def test_recording_proxy_routes_each_test_to_its_own_store(tmp_path):
+    # SCP-1 record: proxy must write to the current test's store on each call.
+    ctrl = Controller("record")
+    fp = tmp_path / _FAKE_FILE
+
+    ctrl.begin_test(f"{_FAKE_FILE}::test_one", fp)
+    proxy = RecordingProxy(Calc(), "calc", ctrl)
+    proxy.add(1, 2)
+    ctrl.end_test()
+
+    ctrl.begin_test(f"{_FAKE_FILE}::test_two", fp)
+    proxy.add(3, 4)
+    ctrl.end_test()
+
+    p1 = resolve_recording_path(f"{_FAKE_FILE}::test_one", fp)
+    p2 = resolve_recording_path(f"{_FAKE_FILE}::test_two", fp)
+    s1, s2 = RecordingStore(p1), RecordingStore(p2)
+    s1.load()
+    s2.load()
+    assert [e.args for e in s1.events("calc")] == [[1, 2]]
+    assert [e.args for e in s2.events("calc")] == [[3, 4]]
+
+
+def test_player_proxy_reloads_events_on_test_boundary(tmp_path):
+    # SCP-1 play: same player instance must serve correct events per test.
+    fp = tmp_path / _FAKE_FILE
+    cases = [(f"{_FAKE_FILE}::test_one", 1, 2), (f"{_FAKE_FILE}::test_two", 3, 4)]
+    for nodeid, a, b in cases:
+        s = RecordingStore(resolve_recording_path(nodeid, fp))
+        rec = RecordingProxy(Calc(), "calc", s)
+        rec.add(a, b)
+        s.flush()
+
+    ctrl = Controller("play")
+    ctrl.begin_test(f"{_FAKE_FILE}::test_one", fp)
+    player = PlayerProxy("calc", ctrl)
+    assert player.add(1, 2) == 3
+    player.assert_consumed()
+    ctrl.end_test()
+
+    ctrl.begin_test(f"{_FAKE_FILE}::test_two", fp)
+    assert player.add(3, 4) == 7
+    player.assert_consumed()
+    ctrl.end_test()
 
 
 def test_player_replays_exception(tmp_path):

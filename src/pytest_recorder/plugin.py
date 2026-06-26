@@ -1,10 +1,10 @@
 """pytest plugin: --recorder option, per-test controller, lifecycle hooks."""
 
 from pathlib import Path
+from typing import Any
 
-from pytest_recorder.engine import PlayerProxy
 from pytest_recorder.errors import MissingRecording
-from pytest_recorder.storage import RecordingStore, resolve_recording_path
+from pytest_recorder.storage import RecordingStore, StoreSource, resolve_recording_path
 
 _CONTROLLER: "Controller | None" = None
 
@@ -17,7 +17,7 @@ def get_controller() -> "Controller":
     return _CONTROLLER
 
 
-class Controller:
+class Controller(StoreSource):
     """Holds recorder mode + per-test store; flushes/asserts at teardown."""
 
     def __init__(self, mode: str) -> None:
@@ -25,7 +25,7 @@ class Controller:
         self._nodeid: str | None = None
         self._test_file: Path | None = None
         self._store: RecordingStore | None = None
-        self._players: list[PlayerProxy] = []
+        self._players: list[Any] = []
 
     def begin_test(self, nodeid: str, test_file: Path) -> None:
         """Reset per-test state at the start of each test."""
@@ -33,6 +33,10 @@ class Controller:
         self._test_file = test_file
         self._store = None
         self._players = []
+
+    def test_id(self) -> str:
+        """Return a stable per-test identifier; proxies reload events on change."""
+        return self._nodeid or ""
 
     def current_store(self) -> RecordingStore:
         """Lazily build (record) or load (play) this test's recording store."""
@@ -51,7 +55,7 @@ class Controller:
         self._store = store
         return store
 
-    def register_player(self, player: PlayerProxy) -> None:
+    def register_player(self, player: Any) -> None:
         """Track a player so its full consumption can be asserted at teardown."""
         self._players.append(player)
 

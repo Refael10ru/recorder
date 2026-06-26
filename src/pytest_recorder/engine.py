@@ -1,35 +1,37 @@
-"""Record/replay engine: RecordingProxy and PlayerProxy over an explicit store."""
+"""Record/replay engine: RecordingProxy and PlayerProxy over a StoreSource."""
+
+from typing import Any
 
 from pytest_recorder.errors import (
     RecordingExhausted,
     RecordingMismatch,
     RecordingUnderused,
 )
-from pytest_recorder.serialize import decode, encode
+from pytest_recorder.serialize import _encode_call, decode, encode, encode_exception
+from pytest_recorder.storage import EncodedEvent, StoreSource
 
 
-def _encode_call(args, kwargs):
-    """Encode a call's positional and keyword args to JSON-safe forms."""
-    return [encode(a) for a in args], {k: encode(v) for k, v in kwargs.items()}
-
-
-def make_event(method, args, kwargs, ret, exc):
-    """Build a serialized event dict for one recorded call.
-
-    Exactly one of ``return`` / ``raised`` is non-null.
-    """
+def make_event(
+    method: str, args: tuple, kwargs: dict, ret: Any, exc: BaseException | None
+) -> EncodedEvent:
+    """Build a serialized EncodedEvent for one recorded call."""
     enc_args, enc_kwargs = _encode_call(args, kwargs)
     if exc is not None:
-        outcome = {"return": None, "raised": encode(exc)}
-    else:
-        outcome = {"return": encode(ret), "raised": None}
-    return {"method": method, "args": enc_args, "kwargs": enc_kwargs, **outcome}
+        # FIN-1: encode_exception validates pickle round-trip at record time.
+        return EncodedEvent(
+            method=method, args=enc_args, kwargs=enc_kwargs,
+            result=None, raised=encode_exception(exc),
+        )
+    return EncodedEvent(
+        method=method, args=enc_args, kwargs=enc_kwargs,
+        result=encode(ret), raised=None,
+    )
 
 
 def is_recorder_mock(obj: object) -> bool:
     """Return True if *obj* is a RecordingProxy or PlayerProxy, False otherwise."""
     fn = getattr(obj, "__is_recorder_mock__", None)
-    return callable(fn) and fn()
+    return bool(callable(fn) and fn())
 
 
 class _RecorderMock:
@@ -40,27 +42,31 @@ class _RecorderMock:
 class RecordingProxy(_RecorderMock):
     """Wrap a real target; record each call, then return/re-raise as normal."""
 
-    def __init__(self, target, name, store):
+    def __init__(self, target: Any, name: str, source: StoreSource) -> None:
         self._target = target
         self._name = name
-        self._store = store
+        # WHY: hold source not a fixed store — source.current_store() per call
+        # routes non-function-scope fixtures to the right test's file (SCP-1).
+        self._source = source
 
-    def _record(self, method, bound, args, kwargs):
+    def _record(self, method: str, bound: Any, args: tuple, kwargs: dict) -> Any:
         exc = None
         ret = None
         try:
             ret = bound(*args, **kwargs)
         except Exception as e:
             exc = e
-        self._store.append(self._name, make_event(method, args, kwargs, ret, exc))
+        # make_event may raise RuntimeError for unpicklable exceptions (FIN-1).
+        event = make_event(method, args, kwargs, ret, exc)
+        self._source.current_store().append(self._name, event)
         if exc is not None:
             raise exc
         return ret
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._record("__call__", self._target, args, kwargs)
 
-    def __getattr__(self, item):
+    def __getattr__(self, item: str) -> Any:
         attr = getattr(self._target, item)
         if not callable(attr):
             msg = (
@@ -69,32 +75,46 @@ class RecordingProxy(_RecorderMock):
             )
             raise AttributeError(msg)
 
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             return self._record(item, attr, args, kwargs)
 
+        self.__dict__[item] = wrapper
         return wrapper
 
 
 class PlayerProxy(_RecorderMock):
     """Replay recorded events in strict order; holds no real target."""
 
-    def __init__(self, name, store):
+    def __init__(self, name: str, source: StoreSource) -> None:
         self._name = name
-        self._events = list(store.events(name))
+        # WHY: hold source not a fixed store — same rationale as RecordingProxy.
+        self._source = source
+        # WHY: sentinel string that no real test_id() can return, so
+        # _maybe_reload always fires on the first call.
+        self._last_test_id = "\x00"
+        self._events: list[EncodedEvent] = []
         self._pos = 0
+        self._maybe_reload()
 
-    def _consume(self, method, args, kwargs):
+    def _maybe_reload(self) -> None:
+        current = self._source.test_id()
+        if current == self._last_test_id:
+            return
+        self._events = list(self._source.current_store().events(self._name))
+        self._pos = 0
+        self._last_test_id = current
+        self._source.register_player(self)
+
+    def _consume(self, method: str, args: tuple, kwargs: dict) -> Any:
+        self._maybe_reload()
         if self._pos >= len(self._events):
             msg = f"recorder: '{self._name}.{method}' called but recording is exhausted"
             raise RecordingExhausted(msg)
         ev = self._events[self._pos]
         self._pos += 1
-        # Match on ENCODED forms, not decoded values: encoded args are JSON-safe
-        # (scalars/strings/{"__pickle__": b64}), so equality never evaluates the
-        # truthiness of a live numpy array / pandas object (which would raise
-        # "truth value is ambiguous"). The event already stores encoded args.
+        # Match on ENCODED forms — decoded numpy/pandas raises "truth value ambiguous".
         live_args, live_kwargs = _encode_call(args, kwargs)
-        expected = (ev["method"], ev["args"], ev["kwargs"])
+        expected = (ev.method, ev.args, ev.kwargs)
         actual = (method, live_args, live_kwargs)
         if expected != actual:
             exp_m, exp_a, exp_k = expected
@@ -104,11 +124,11 @@ class PlayerProxy(_RecorderMock):
                 f"  got:      {method}(args={live_args}, kwargs={live_kwargs})"
             )
             raise RecordingMismatch(msg)
-        if ev["raised"] is not None:
-            raise decode(ev["raised"])
-        return decode(ev["return"])
+        if ev.raised is not None:
+            raise decode(ev.raised)
+        return decode(ev.result)
 
-    def assert_consumed(self):
+    def assert_consumed(self) -> None:
         """Raise if the test used fewer recorded events than exist."""
         if self._pos != len(self._events):
             msg = (
@@ -117,11 +137,12 @@ class PlayerProxy(_RecorderMock):
             )
             raise RecordingUnderused(msg)
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._consume("__call__", args, kwargs)
 
-    def __getattr__(self, item):
-        def wrapper(*args, **kwargs):
+    def __getattr__(self, item: str) -> Any:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             return self._consume(item, args, kwargs)
 
+        self.__dict__[item] = wrapper
         return wrapper

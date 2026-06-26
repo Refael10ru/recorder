@@ -22,12 +22,12 @@ def record(name: str | None = None):
             if ctrl.mode == "off":
                 yield factory(*args, **kwargs)
                 return
-            store = ctrl.current_store()
             if ctrl.mode == "record":
-                yield RecordingProxy(factory(*args, **kwargs), fixture_name, store)
+                # WHY: pass ctrl not ctrl.current_store() — ctrl.current_store()
+                # is called per method call so each test gets its own store (SCP-1).
+                yield RecordingProxy(factory(*args, **kwargs), fixture_name, ctrl)
             else:  # play -- factory NOT called
-                player = PlayerProxy(fixture_name, store)
-                ctrl.register_player(player)
+                player = PlayerProxy(fixture_name, ctrl)
                 yield player
 
         return wrapper

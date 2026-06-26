@@ -1,109 +1,84 @@
 # Planned API improvements
 
-Items identified during code review. Each should become its own PR in a future
-simplification cycle.
+Items identified during code review. Each should become its own PR.
+
+Items 1–4 were the original plan; 5–6 emerged from the storage-refactor CR.
 
 ---
 
-## 1. Remove `current_store()` shim from RecordingStore
+## ~~1. Remove `current_store()` shim from RecordingStore~~ *(blocked on #5)*
 
-**Current:** `RecordingStore.current_store()` returns `self` purely to satisfy
-the `_StoreSource` Protocol / `StoreSource` ABC without importing engine.
-
-**Problem:** A method whose only implementation is `return self` is noise; it
-exists for structural compatibility, not for domain logic. Anyone reading
-`RecordingStore` has to understand why this no-op exists.
-
-**Direction:** Once the ABC contract is fully settled, explore whether
-`current_store()` can be removed from `RecordingStore`'s public surface, or
-whether it can be renamed to something that makes the structural role
-self-evident (e.g. `as_store_source()`).
+`RecordingStore.current_store()` returning `self` is pure noise — it exists only
+because `RecordingStore` extends `StoreSource`. Removing it requires the ABC
+split described in item 5 below (once `RecordingStore` no longer extends
+`StoreSource` at all, the shim disappears).
 
 ---
 
-## 2. Add `EncodedRecording` dataclass for the event dict
+## ~~2. Add `EncodedEvent` TypedDict~~ *(done in storage-refactor)*
 
-**Current:** Events are stored as untyped `dict` throughout:
-
-```python
-_data: dict[str, list[dict]]
-append(name: str, event: dict)
-events(name: str) -> list[dict]
-```
-
-The actual shape is:
-```python
-{"method": str, "args": list, "kwargs": dict, "return": object | None, "raised": object | None}
-```
-
-but nothing enforces this at the type level.
-
-**Direction:** Introduce a typed `EncodedEvent` (TypedDict or dataclass) that
-captures the shape. `RecordingStore` would then export `list[EncodedEvent]`
-instead of `list[dict]`. `engine.make_event` would produce an `EncodedEvent`.
-
-**Note:** `"return"` is a Python keyword, so a TypedDict needs functional syntax:
-```python
-EncodedEvent = TypedDict("EncodedEvent", {
-    "method": str,
-    "args": list[object],
-    "kwargs": dict[str, object],
-    "return": object | None,
-    "raised": object | None,
-})
-```
-
-The definition should live in `storage.py` (closest to where events are stored)
-or a shared types module if more types accumulate.
+Implemented. `"return"` is a Python keyword so a dataclass is not viable —
+dataclass field names must be valid Python identifiers. TypedDict's functional
+syntax `TypedDict("EncodedEvent", {"return": ...})` is the only clean option
+without renaming the JSON key on disk.
 
 ---
 
-## 3. Make storage.py fully independent (no recorder imports)
+## ~~3. Make storage.py fully independent~~ *(done in storage-refactor)*
 
-**Current:** `storage.py` imports `StoreSource` from `interfaces.py`:
-
-```python
-from pytest_recorder.interfaces import StoreSource
-```
-
-This means storage — intended to be the lowest layer — depends on interfaces,
-which in turn has TYPE_CHECKING imports back to storage and engine, creating a
-conceptual cycle even if not a runtime one.
-
-**Direction:** Storage should have zero recorder imports. Options:
-
-- Move `StoreSource` into `storage.py` directly (engine and plugin import it
-  from storage). Storage is already the natural home — it defines `RecordingStore`,
-  which is what `StoreSource` abstracts.
-- Or keep `interfaces.py` but remove storage's inheritance from it; use
-  `register()` / duck typing at plugin level instead.
-
-The preferred direction is to move the ABC into storage so the dependency arrow
-is: `engine/plugin → storage` (clean, bottom-up) rather than
-`storage → interfaces ← engine/plugin` (sideways).
+`StoreSource` ABC now lives in `storage.py`; engine and plugin import from
+storage. storage imports nothing from recorder.
 
 ---
 
-## 4. Move `_encode_call` out of engine's public surface
+## ~~4. Move `_encode_call` to serialize.py~~ *(done in storage-refactor)*
 
-**Current:** `targets.py` imports `_encode_call` from `engine.py` (underscore-
-prefixed but used cross-module) to compute stable stream keys:
+Done. `engine.py`'s public surface is now `RecordingProxy`, `PlayerProxy`,
+`is_recorder_mock`, `make_event`.
 
-```python
-enc_args, enc_kwargs = _encode_call(args, kwargs)
-sig = json.dumps([enc_args, enc_kwargs], sort_keys=True)
-```
+---
 
-`_encode_call` is just `serialize.encode` applied to each arg:
-```python
-def _encode_call(args, kwargs):
-    return [encode(a) for a in args], {k: encode(v) for k, v in kwargs.items()}
-```
+## 5. Split `StoreSource` ABC into two protocols
 
-**Problem:** An underscore-prefixed internal helper leaks across the module
-boundary. Targets could call `serialize.encode` directly and do the list/dict
-mapping itself.
+**Current:** `StoreSource` mixes two concerns in one ABC:
+- `test_id()` — a test-boundary sensor, used only by proxies to detect when to
+  reload events
+- `current_store()` / `register_player()` — the outward store accessor, called
+  per method call
 
-**Direction:** Move `_encode_call` to `serialize.py` (or inline it in targets)
-and remove the cross-module import. Either way, engine's public surface becomes
-`RecordingProxy` and `PlayerProxy` only.
+**Problem:** `RecordingStore` has to implement `current_store()` (returns `self`)
+and `register_player()` (no-op) purely to satisfy the ABC. These are noise.
+
+**Direction:** Split into two protocols:
+1. A boundary sensor (has `test_id()`), held by proxies for reload detection
+2. A store accessor (has `current_store()` / `register_player()`), called per
+   method call
+
+With this split, `RecordingStore` would not extend either protocol — it is the
+thing that gets returned by `current_store()`, not the thing that provides it.
+`Controller` would implement both protocols. `_BlockSource` in targets.py would
+disappear or simplify.
+
+---
+
+## 6. Redesign targets.py as its own isolated layer
+
+**Current:** `targets.py` uses `_BlockSource` (a `StoreSource` shim) to intercept
+`register_player` so `record_class` can assert at block exit rather than at
+teardown. This is awkward — `_BlockSource`/`StoreSource` are separate types that
+can't be used together cleanly.
+
+**Direction (from CR):** Make targets.py its own layer that:
+- Manages all recorder/player stream IDs (human-readable)
+- Accesses files by passing IDs to storage.py (storage is just the I/O layer)
+- Monkeypatches `__init__` (or the callable) to create proxies
+- Registers one player per fixture it encapsulates (instead of per construction)
+
+This removes the need for `_BlockSource` entirely and makes `record_class` and
+`record_function` symmetric: both manage their own player lifecycle without
+depending on the controller's player registry.
+
+**Note on multiple `_make_replacement` methods:** `record_class` wraps the
+constructed **instance** (method calls on the instance are events), while
+`record_function` wraps the **callable** (the call itself is the event). The
+redesign should make this distinction explicit in the layer's public API.

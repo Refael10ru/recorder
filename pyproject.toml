@@ -24,8 +24,8 @@ testpaths = ["tests"]
 files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
-# pandas ships no type stubs; used only in the testbed's pickle-fallback rung.
-module = ["pandas"]
+# pandas and wikipedia ship no type stubs; used only in the testbed.
+module = ["pandas", "wikipedia"]
 ignore_missing_imports = true
 
 [dependency-groups]
