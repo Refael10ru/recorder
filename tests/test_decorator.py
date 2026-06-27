@@ -2,19 +2,23 @@
 
 import pytest
 
-from pytest_recorder import plugin
 from pytest_recorder.decorator import record
+from pytest_recorder.proxy_tracking import ProxyTracker, RecorderMode
 
 
 @pytest.fixture
-def recording_controller(tmp_path, monkeypatch):
-    ctrl = plugin.Controller("record")
-    ctrl.begin_test("nodeid", tmp_path / "test_x.py")
-    monkeypatch.setattr(plugin, "_CONTROLLER", ctrl)
-    return ctrl
+def recording_targets(tmp_path):
+    import pytest_recorder.proxy_tracking as _mod
+
+    prev = _mod._TRACKER
+    t = ProxyTracker(RecorderMode.RECORD)
+    t.begin_test("nodeid", tmp_path / "test_x.py")
+    _mod._TRACKER = t
+    yield t
+    _mod._TRACKER = prev
 
 
-def test_default_name_uses_function_name(recording_controller) -> None:
+def test_default_name_uses_function_name(recording_targets) -> None:
     @record()
     def pricing():
         return lambda a, b: a + b
@@ -23,10 +27,10 @@ def test_default_name_uses_function_name(recording_controller) -> None:
     proxy = next(gen)
     assert proxy(2, 3) == 5
     gen.close()
-    assert recording_controller.current_store().events("pricing")
+    assert recording_targets.current_store().events("pricing")
 
 
-def test_explicit_name_overrides_function_name(recording_controller) -> None:
+def test_explicit_name_overrides_function_name(recording_targets) -> None:
     @record("custom")
     def pricing():
         return lambda a, b: a + b
@@ -35,6 +39,6 @@ def test_explicit_name_overrides_function_name(recording_controller) -> None:
     proxy = next(gen)
     assert proxy(7, 0) == 7
     gen.close()
-    store = recording_controller.current_store()
+    store = recording_targets.current_store()
     assert store.events("custom")
     assert not store.events("pricing")

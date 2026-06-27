@@ -1,5 +1,6 @@
-"""Record/replay engine: RecordingProxy and PlayerProxy over a StoreSource."""
+"""Record/replay engine: RecordingProxy and PlayerProxy over a store callable."""
 
+from collections.abc import Callable
 from typing import Any
 
 from pytest_recorder.errors import (
@@ -8,7 +9,7 @@ from pytest_recorder.errors import (
     RecordingUnderused,
 )
 from pytest_recorder.serialize import _encode_call, decode, encode, encode_exception
-from pytest_recorder.storage import EncodedEvent, StoreSource
+from pytest_recorder.storage import EncodedEvent, RecordingStore
 
 
 def make_event(
@@ -42,12 +43,12 @@ class _RecorderMock:
 class RecordingProxy(_RecorderMock):
     """Wrap a real target; record each call, then return/re-raise as normal."""
 
-    def __init__(self, target: Any, name: str, source: StoreSource) -> None:
+    def __init__(
+        self, target: Any, name: str, get_store: Callable[[], RecordingStore]
+    ) -> None:
         self._target = target
         self._name = name
-        # WHY: hold source not a fixed store — source.current_store() per call
-        # routes non-function-scope fixtures to the right test's file (SCP-1).
-        self._source = source
+        self._get_store = get_store
 
     def _record(self, method: str, bound: Any, args: tuple, kwargs: dict) -> Any:
         exc = None
@@ -58,7 +59,7 @@ class RecordingProxy(_RecorderMock):
             exc = e
         # make_event may raise RuntimeError for unpicklable exceptions (FIN-1).
         event = make_event(method, args, kwargs, ret, exc)
-        self._source.current_store().append(self._name, event)
+        self._get_store().append(self._name, event)
         if exc is not None:
             raise exc
         return ret
@@ -85,25 +86,23 @@ class RecordingProxy(_RecorderMock):
 class PlayerProxy(_RecorderMock):
     """Replay recorded events in strict order; holds no real target."""
 
-    def __init__(self, name: str, source: StoreSource) -> None:
+    def __init__(self, name: str, get_store: Callable[[], RecordingStore]) -> None:
         self._name = name
-        # WHY: hold source not a fixed store — same rationale as RecordingProxy.
-        self._source = source
-        # WHY: sentinel string that no real test_id() can return, so
-        # _maybe_reload always fires on the first call.
-        self._last_test_id = "\x00"
+        self._get_store = get_store
+        self._store: RecordingStore | None = None
         self._events: list[EncodedEvent] = []
         self._pos = 0
         self._maybe_reload()
 
     def _maybe_reload(self) -> None:
-        current = self._source.test_id()
-        if current == self._last_test_id:
+        # WHY: compare store identity not test_id — RecordTargets.begin_test creates
+        # a fresh RecordingStore per test, so reference change = test boundary.
+        store = self._get_store()
+        if store is self._store:
             return
-        self._events = list(self._source.current_store().events(self._name))
+        self._store = store
+        self._events = list(store.events(self._name))
         self._pos = 0
-        self._last_test_id = current
-        self._source.register_player(self)
 
     def _consume(self, method: str, args: tuple, kwargs: dict) -> Any:
         self._maybe_reload()
