@@ -1,4 +1,6 @@
-"""record_class / record_function: monkeypatch by import path for a test.
+"""Tracks all proxies in the process.
+
+record_class / record_function: monkeypatch by import path for a test.
 
 ``record_class`` is for **class/factory** symbols: the constructed instance is
 wrapped in a proxy so method calls on it are also recorded.
@@ -7,7 +9,7 @@ wrapped in a proxy so method calls on it are also recorded.
 methods): the call itself is recorded and the real return value is passed
 through unchanged.  Use this for module-level APIs like ``wikipedia.search``.
 
-``RecordTargets`` is the global lifecycle object for this module — it owns
+``ProxyTracker`` is the global lifecycle object for this module — it owns
 recorder mode, the per-test store, and the player registry. ``plugin.py``
 creates it at session start and calls ``begin_test`` / ``end_test`` around
 each test.
@@ -26,28 +28,28 @@ from pytest_recorder.errors import MissingRecording
 from pytest_recorder.serialize import _encode_call
 from pytest_recorder.storage import RecordingStore, resolve_recording_path
 
-_TARGETS: "RecordTargets | None" = None
+_TRACKER: "ProxyTracker | None" = None
 
 
-def get_targets() -> "RecordTargets":
-    """Return the active RecordTargets, or raise if the plugin is unconfigured."""
-    if _TARGETS is None:
-        msg = "recorder: targets not configured"
+def get_tracker() -> "ProxyTracker":
+    """Return the active ProxyTracker, or raise if the plugin is unconfigured."""
+    if _TRACKER is None:
+        msg = "recorder: tracker not configured"
         raise RuntimeError(msg)
-    return _TARGETS
+    return _TRACKER
 
 
-def _set_targets(t: "RecordTargets") -> None:
-    global _TARGETS
-    _TARGETS = t
+def _set_tracker(t: "ProxyTracker") -> None:
+    global _TRACKER
+    _TRACKER = t
 
 
-class RecordTargets:
+class ProxyTracker:
     """Global lifecycle manager: recorder mode, per-test store, player registry.
 
     ``plugin.py`` creates one instance per session and wires pytest hooks to
     call ``begin_test`` / ``end_test``. ``record_class`` / ``record_function``
-    and ``decorator.record`` all call ``get_targets()`` to reach this object.
+    and ``decorator.record`` all call ``get_tracker()`` to reach this object.
 
     Assertion of player consumption happens at ``end_test`` (not at block
     ``__exit__``) so that fixture teardown calls — which happen after the
@@ -125,13 +127,13 @@ class record_class:
     def __enter__(self) -> "record_class":
         self._patches = []
         self._counters = {}
-        targets = get_targets()
-        if targets.mode == "off":
+        tracker = get_tracker()
+        if tracker.mode == "off":
             return self
         for path in self._paths:
             module, attr = _resolve(path)
             original = getattr(module, attr)
-            replacement = self._make_replacement(targets.mode, path, original)
+            replacement = self._make_replacement(tracker.mode, path, original)
             setattr(module, attr, replacement)
             self._patches.append((module, attr, original))
         return self
@@ -140,7 +142,7 @@ class record_class:
         for module, attr, original in reversed(self._patches):
             setattr(module, attr, original)
         self._patches = []
-        # Player consumption is asserted at RecordTargets.end_test, not here,
+        # Player consumption is asserted at ProxyTracker.end_test, not here,
         # so that fixture teardown calls are included in the recording window.
 
     def __call__(self, func: Callable) -> Callable:
@@ -164,16 +166,16 @@ class record_class:
         on it are the recorded events. record_function overrides this to return
         the proxy directly instead (the call is the event, not the methods).
         """
-        targets = get_targets()
+        tracker = get_tracker()
 
         def ctor_proxy(*args: Any, **kwargs: Any) -> object:
             key = self._next_key(path, args, kwargs)
             if mode == "record":
                 return RecordingProxy(
-                    original(*args, **kwargs), key, targets.current_store
+                    original(*args, **kwargs), key, tracker.current_store
                 )
-            player = PlayerProxy(key, targets.current_store)
-            targets.register_player(player)
+            player = PlayerProxy(key, tracker.current_store)
+            tracker.register_player(player)
             return player
 
         return ctor_proxy
@@ -205,9 +207,9 @@ class record_function(record_class):
         PlayerProxy implement __call__, preserving the function's callable contract.
         Mode is decided here at patch time, not per-call.
         """
-        targets = get_targets()
+        tracker = get_tracker()
         if mode == "record":
-            return RecordingProxy(original, path, targets.current_store)
-        player = PlayerProxy(path, targets.current_store)
-        targets.register_player(player)
+            return RecordingProxy(original, path, tracker.current_store)
+        player = PlayerProxy(path, tracker.current_store)
+        tracker.register_player(player)
         return player

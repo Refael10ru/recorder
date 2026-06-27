@@ -3,19 +3,19 @@
 import pytest
 
 from pytest_recorder.decorator import record
-from pytest_recorder.targets import RecordTargets
+from pytest_recorder.proxy_tracking import ProxyTracker
 
 
 @pytest.fixture
 def recording_targets(tmp_path):
-    import pytest_recorder.targets as _mod
+    import pytest_recorder.proxy_tracking as _mod
 
-    prev = _mod._TARGETS
-    t = RecordTargets("record")
+    prev = _mod._TRACKER
+    t = ProxyTracker("record")
     t.begin_test("nodeid", tmp_path / "test_x.py")
-    _mod._TARGETS = t
+    _mod._TRACKER = t
     yield t
-    _mod._TARGETS = prev
+    _mod._TRACKER = prev
 
 
 def test_default_name_uses_function_name(recording_targets) -> None:

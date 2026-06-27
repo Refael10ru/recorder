@@ -7,8 +7,8 @@ from pytest_recorder.errors import (
     RecordingMismatch,
     RecordingUnderused,
 )
+from pytest_recorder.proxy_tracking import ProxyTracker
 from pytest_recorder.storage import RecordingStore, resolve_recording_path
-from pytest_recorder.targets import RecordTargets
 
 
 class _BadPickleError(Exception):
@@ -157,7 +157,7 @@ def test_recording_fails_loudly_for_non_picklable_exception(tmp_path):
 
 def test_recording_proxy_routes_each_test_to_its_own_store(tmp_path):
     # SCP-1 record: proxy must write to the current test's store on each call.
-    targets = RecordTargets("record")
+    targets = ProxyTracker("record")
     fp = tmp_path / _FAKE_FILE
 
     targets.begin_test(f"{_FAKE_FILE}::test_one", fp)
@@ -188,7 +188,7 @@ def test_player_proxy_reloads_events_on_test_boundary(tmp_path):
         rec.add(a, b)
         s.flush()
 
-    targets = RecordTargets("play")
+    targets = ProxyTracker("play")
     targets.begin_test(f"{_FAKE_FILE}::test_one", fp)
     player = PlayerProxy("calc", targets.current_store)
     assert player.add(1, 2) == 3

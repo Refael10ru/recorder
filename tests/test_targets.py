@@ -4,7 +4,7 @@ import contextlib
 
 import pytest
 
-from pytest_recorder.targets import RecordTargets
+from pytest_recorder.proxy_tracking import ProxyTracker
 from tests import _targetmod
 
 TARGET = "tests._targetmod.Dependency"
@@ -12,28 +12,28 @@ TARGET = "tests._targetmod.Dependency"
 
 @pytest.fixture
 def install_targets(tmp_path):
-    """Install a RecordTargets of a given mode sharing one recording path.
+    """Install a ProxyTracker of a given mode sharing one recording path.
 
     Returns a context manager factory so a single test can record under one
     targets instance, then replay under another against the same recording file.
     """
-    import pytest_recorder.targets as _mod
+    import pytest_recorder.proxy_tracking as _mod
 
     rec_path = tmp_path / "test_x.py"
 
     @contextlib.contextmanager
     def factory(mode):
-        prev = _mod._TARGETS
-        t = RecordTargets(mode)
+        prev = _mod._TRACKER
+        t = ProxyTracker(mode)
         t.begin_test("nodeid", rec_path)
-        _mod._TARGETS = t
+        _mod._TRACKER = t
         try:
             yield t
             t.end_test()
         finally:
             # Restore before pytest_runtest_teardown runs so the plugin hook
             # calls end_test on the real session targets, not this test instance.
-            _mod._TARGETS = prev
+            _mod._TRACKER = prev
 
     return factory
 
