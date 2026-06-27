@@ -4,7 +4,7 @@ import contextlib
 
 import pytest
 
-from pytest_recorder.proxy_tracking import ProxyTracker
+from pytest_recorder.proxy_tracking import ProxyTracker, RecorderMode
 from tests import _targetmod
 
 TARGET = "tests._targetmod.Dependency"
@@ -24,7 +24,7 @@ def install_targets(tmp_path):
     @contextlib.contextmanager
     def factory(mode):
         prev = _mod._TRACKER
-        t = ProxyTracker(mode)
+        t = ProxyTracker(RecorderMode(mode))
         t.begin_test("nodeid", rec_path)
         _mod._TRACKER = t
         try:

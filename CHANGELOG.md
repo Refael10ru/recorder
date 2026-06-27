@@ -10,10 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `ProxyTracker` in `proxy_tracking.py`: global lifecycle manager owning recorder mode, per-test store, and player registry. Plugin creates it; `record_class`, `record_function`, and `@record` all reach it via `get_tracker()`.
 - `get_tracker()` / `_set_tracker()` in `proxy_tracking.py`: accessor and installer for the session-global `ProxyTracker` instance.
+- `RecorderMode` (`StrEnum`): typed mode values `OFF`, `RECORD`, `PLAY` — replaces bare `str` throughout.
 
 ### Changed
 
 - `plugin.py` is now a thin pytest adapter: only registers hooks and delegates to `ProxyTracker`. `Controller` class removed.
+- `ProxyTracker.begin_test` now eagerly builds (record) or loads (play) the `RecordingStore` instead of deferring to first proxy access. `current_store()` is now a trivial getter.
 - `RecordingProxy` and `PlayerProxy` now accept `get_store: Callable[[], RecordingStore]` instead of `StoreSource`. `PlayerProxy._maybe_reload` detects test boundaries by store identity (new instance = new test) rather than `test_id()`.
 - Player consumption is now asserted at `ProxyTracker.end_test` (after teardown) instead of at `record_class.__exit__`, so fixture teardown method calls are included in the recording window. `test_play_underuse_raises_at_block_exit` renamed `test_play_underuse_raises_at_test_end`.
 - `_BlockSource` shim removed from `proxy_tracking.py` — player lifecycle is now fully owned by `ProxyTracker`.

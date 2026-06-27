@@ -1,6 +1,11 @@
 """pytest plugin: --recorder option; thin adapter that drives ProxyTracker."""
 
-from pytest_recorder.proxy_tracking import ProxyTracker, _set_tracker, get_tracker
+from pytest_recorder.proxy_tracking import (
+    ProxyTracker,
+    RecorderMode,
+    _set_tracker,
+    get_tracker,
+)
 
 
 def pytest_addoption(parser) -> None:
@@ -16,7 +21,7 @@ def pytest_addoption(parser) -> None:
 
 def pytest_configure(config) -> None:
     """Create the global ProxyTracker from the chosen mode."""
-    _set_tracker(ProxyTracker(config.getoption("--recorder")))
+    _set_tracker(ProxyTracker(RecorderMode(config.getoption("--recorder"))))
 
 
 def pytest_runtest_setup(item) -> None:

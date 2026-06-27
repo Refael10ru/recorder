@@ -3,7 +3,7 @@
 import functools
 
 from pytest_recorder.engine import PlayerProxy, RecordingProxy
-from pytest_recorder.proxy_tracking import get_tracker
+from pytest_recorder.proxy_tracking import RecorderMode, get_tracker
 
 
 def record(name: str | None = None):
@@ -19,10 +19,10 @@ def record(name: str | None = None):
         @functools.wraps(factory)
         def wrapper(*args, **kwargs):
             targets = get_tracker()
-            if targets.mode == "off":
+            if targets.mode == RecorderMode.OFF:
                 yield factory(*args, **kwargs)
                 return
-            if targets.mode == "record":
+            if targets.mode == RecorderMode.RECORD:
                 yield RecordingProxy(
                     factory(*args, **kwargs), fixture_name, targets.current_store
                 )
