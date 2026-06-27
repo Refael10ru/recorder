@@ -3,7 +3,7 @@
 import functools
 
 from pytest_recorder.engine import PlayerProxy, RecordingProxy
-from pytest_recorder.plugin import get_controller
+from pytest_recorder.targets import get_targets
 
 
 def record(name: str | None = None):
@@ -18,16 +18,17 @@ def record(name: str | None = None):
 
         @functools.wraps(factory)
         def wrapper(*args, **kwargs):
-            ctrl = get_controller()
-            if ctrl.mode == "off":
+            targets = get_targets()
+            if targets.mode == "off":
                 yield factory(*args, **kwargs)
                 return
-            if ctrl.mode == "record":
-                # WHY: pass ctrl not ctrl.current_store() — ctrl.current_store()
-                # is called per method call so each test gets its own store (SCP-1).
-                yield RecordingProxy(factory(*args, **kwargs), fixture_name, ctrl)
+            if targets.mode == "record":
+                yield RecordingProxy(
+                    factory(*args, **kwargs), fixture_name, targets.current_store
+                )
             else:  # play -- factory NOT called
-                player = PlayerProxy(fixture_name, ctrl)
+                player = PlayerProxy(fixture_name, targets.current_store)
+                targets.register_player(player)
                 yield player
 
         return wrapper

@@ -6,41 +6,95 @@ wrapped in a proxy so method calls on it are also recorded.
 ``record_function`` is for **plain callable** symbols (functions, builtins,
 methods): the call itself is recorded and the real return value is passed
 through unchanged.  Use this for module-level APIs like ``wikipedia.search``.
+
+``RecordTargets`` is the global lifecycle object for this module — it owns
+recorder mode, the per-test store, and the player registry. ``plugin.py``
+creates it at session start and calls ``begin_test`` / ``end_test`` around
+each test.
 """
 
 import functools
 import importlib
 import json
 from collections.abc import Callable
+from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 from pytest_recorder.engine import PlayerProxy, RecordingProxy
-from pytest_recorder.plugin import Controller, get_controller
+from pytest_recorder.errors import MissingRecording
 from pytest_recorder.serialize import _encode_call
-from pytest_recorder.storage import RecordingStore, StoreSource
+from pytest_recorder.storage import RecordingStore, resolve_recording_path
+
+_TARGETS: "RecordTargets | None" = None
 
 
-class _BlockSource(StoreSource):
-    """StoreSource shim that routes store/test_id to a Controller but collects
-    its own player list so record_class can assert at block exit instead of
-    relying on ctrl.end_test().
+def get_targets() -> "RecordTargets":
+    """Return the active RecordTargets, or raise if the plugin is unconfigured."""
+    if _TARGETS is None:
+        msg = "recorder: targets not configured"
+        raise RuntimeError(msg)
+    return _TARGETS
+
+
+def _set_targets(t: "RecordTargets") -> None:
+    global _TARGETS
+    _TARGETS = t
+
+
+class RecordTargets:
+    """Global lifecycle manager: recorder mode, per-test store, player registry.
+
+    ``plugin.py`` creates one instance per session and wires pytest hooks to
+    call ``begin_test`` / ``end_test``. ``record_class`` / ``record_function``
+    and ``decorator.record`` all call ``get_targets()`` to reach this object.
+
+    Assertion of player consumption happens at ``end_test`` (not at block
+    ``__exit__``) so that fixture teardown calls — which happen after the
+    test body exits — are included in the recording window.
     """
 
-    def __init__(self, ctrl: Controller) -> None:
-        self._ctrl = ctrl
-        self.players: list[Any] = []
+    def __init__(self, mode: str) -> None:
+        self.mode = mode
+        self._nodeid: str | None = None
+        self._test_file: Path | None = None
+        self._store: RecordingStore | None = None
+        self._players: list[Any] = []
+
+    def begin_test(self, nodeid: str, test_file: Path) -> None:
+        """Reset per-test state at the start of each test."""
+        self._nodeid = nodeid
+        self._test_file = test_file
+        self._store = None
+        self._players = []
 
     def current_store(self) -> RecordingStore:
-        return self._ctrl.current_store()
-
-    def test_id(self) -> str:
-        return self._ctrl.test_id()
+        """Lazily build (record) or load (play) this test's recording store."""
+        if self._store is None:
+            if self._nodeid is None or self._test_file is None:
+                msg = "recorder: current_store called outside a running test"
+                raise RuntimeError(msg)
+            path = resolve_recording_path(self._nodeid, self._test_file)
+            if self.mode == "play" and not path.exists():
+                msg = f"recorder: no recording at {path}; re-run with --recorder=record"
+                raise MissingRecording(msg)
+            store = RecordingStore(path)
+            if self.mode == "play":
+                store.load()
+            self._store = store
+        return self._store
 
     def register_player(self, player: Any) -> None:
-        # WHY: don't propagate to ctrl — record_class asserts at __exit__,
-        # not at teardown, so players must not appear in ctrl._players.
-        self.players.append(player)
+        """Track a player so its full consumption can be asserted at end_test."""
+        self._players.append(player)
+
+    def end_test(self) -> None:
+        """Flush recordings (record) or assert full consumption (play)."""
+        if self.mode == "record" and self._store is not None:
+            self._store.flush()
+        elif self.mode == "play":
+            for player in self._players:
+                player.assert_consumed()
 
 
 def _resolve(path: str) -> tuple[ModuleType, str]:
@@ -66,20 +120,18 @@ class record_class:
     def __init__(self, *paths: str) -> None:
         self._paths = paths
         self._patches: list[tuple[ModuleType, str, object]] = []
-        self._source: _BlockSource | None = None
         self._counters: dict[str, int] = {}
 
     def __enter__(self) -> "record_class":
         self._patches = []
         self._counters = {}
-        ctrl = get_controller()
-        if ctrl.mode == "off":
+        targets = get_targets()
+        if targets.mode == "off":
             return self
-        self._source = _BlockSource(ctrl)
         for path in self._paths:
             module, attr = _resolve(path)
             original = getattr(module, attr)
-            replacement = self._make_replacement(ctrl.mode, path, original)
+            replacement = self._make_replacement(targets.mode, path, original)
             setattr(module, attr, replacement)
             self._patches.append((module, attr, original))
         return self
@@ -88,10 +140,8 @@ class record_class:
         for module, attr, original in reversed(self._patches):
             setattr(module, attr, original)
         self._patches = []
-        if exc_type is None and self._source is not None:
-            for player in self._source.players:
-                player.assert_consumed()
-        self._source = None
+        # Player consumption is asserted at RecordTargets.end_test, not here,
+        # so that fixture teardown calls are included in the recording window.
 
     def __call__(self, func: Callable) -> Callable:
         @functools.wraps(func)
@@ -114,16 +164,17 @@ class record_class:
         on it are the recorded events. record_function overrides this to return
         the proxy directly instead (the call is the event, not the methods).
         """
-        source = self._source
-        assert source is not None
+        targets = get_targets()
 
         def ctor_proxy(*args: Any, **kwargs: Any) -> object:
             key = self._next_key(path, args, kwargs)
             if mode == "record":
-                # Wrap the instance so method calls on it are also recorded.
-                return RecordingProxy(original(*args, **kwargs), key, source)
-            # source tracks players for __exit__ assertion (not ctrl).
-            return PlayerProxy(key, source)
+                return RecordingProxy(
+                    original(*args, **kwargs), key, targets.current_store
+                )
+            player = PlayerProxy(key, targets.current_store)
+            targets.register_player(player)
+            return player
 
         return ctor_proxy
 
@@ -154,8 +205,9 @@ class record_function(record_class):
         PlayerProxy implement __call__, preserving the function's callable contract.
         Mode is decided here at patch time, not per-call.
         """
-        source = self._source
-        assert source is not None
+        targets = get_targets()
         if mode == "record":
-            return RecordingProxy(original, path, source)
-        return PlayerProxy(path, source)
+            return RecordingProxy(original, path, targets.current_store)
+        player = PlayerProxy(path, targets.current_store)
+        targets.register_player(player)
+        return player
