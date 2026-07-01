@@ -4,6 +4,9 @@ import contextlib
 
 import pytest
 
+import pytest_recorder.proxy_tracking as _mod
+from pytest_recorder import record_class
+from pytest_recorder.errors import RecordingUnderused
 from pytest_recorder.proxy_tracking import ProxyTracker, RecorderMode
 from tests import _targetmod
 
@@ -17,8 +20,6 @@ def install_targets(tmp_path):
     Returns a context manager factory so a single test can record under one
     targets instance, then replay under another against the same recording file.
     """
-    import pytest_recorder.proxy_tracking as _mod
-
     rec_path = tmp_path / "test_x.py"
 
     @contextlib.contextmanager
@@ -39,8 +40,6 @@ def install_targets(tmp_path):
 
 
 def test_record_then_play_roundtrip(install_targets):
-    from pytest_recorder import record_class
-
     with install_targets("record"), record_class(TARGET):
         assert _targetmod.run("prod", "k1") == "prod:k1"
 
@@ -49,8 +48,6 @@ def test_record_then_play_roundtrip(install_targets):
 
 
 def test_play_does_not_build_real_object(install_targets, monkeypatch):
-    from pytest_recorder import record_class
-
     with install_targets("record"), record_class(TARGET):
         assert _targetmod.run("prod", "k1") == "prod:k1"
 
@@ -65,8 +62,6 @@ def test_play_does_not_build_real_object(install_targets, monkeypatch):
 
 
 def test_constructor_args_key_instances_independently(install_targets):
-    from pytest_recorder import record_class
-
     with install_targets("record"), record_class(TARGET):
         assert _targetmod.run("alpha", "k") == "alpha:k"
         assert _targetmod.run("beta", "k") == "beta:k"
@@ -78,16 +73,12 @@ def test_constructor_args_key_instances_independently(install_targets):
 
 
 def test_off_mode_is_a_noop(install_targets):
-    from pytest_recorder import record_class
-
     with install_targets("off"), record_class(TARGET):
         # real symbol untouched -> real Dependency runs, nothing recorded
         assert _targetmod.Dependency("x").fetch("y") == "x:y"
 
 
 def test_decorator_form_wraps_body(install_targets):
-    from pytest_recorder import record_class
-
     @record_class(TARGET)
     def body():
         return _targetmod.run("prod", "k1")
@@ -99,8 +90,6 @@ def test_decorator_form_wraps_body(install_targets):
 
 
 def test_symbols_restored_after_exception(install_targets):
-    from pytest_recorder import record_class
-
     original = _targetmod.Dependency
     with (
         install_targets("record"),
@@ -115,9 +104,6 @@ def test_symbols_restored_after_exception(install_targets):
 def test_play_underuse_raises_at_test_end(install_targets):
     # Underuse is detected at end_test (not __exit__) so teardown method calls
     # are included in the recording window.
-    from pytest_recorder import record_class
-    from pytest_recorder.errors import RecordingUnderused
-
     with install_targets("record"), record_class(TARGET):
         assert _targetmod.run("prod", "k1") == "prod:k1"
 

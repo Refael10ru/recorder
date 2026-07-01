@@ -2,14 +2,13 @@
 
 import pytest
 
+import pytest_recorder.proxy_tracking as _mod
 from pytest_recorder.decorator import record
 from pytest_recorder.proxy_tracking import ProxyTracker, RecorderMode
 
 
 @pytest.fixture
 def recording_targets(tmp_path):
-    import pytest_recorder.proxy_tracking as _mod
-
     prev = _mod._TRACKER
     t = ProxyTracker(RecorderMode.RECORD)
     t.begin_test("nodeid", tmp_path / "test_x.py")

@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `PLC0415` added to ruff select — in-function imports are now a lint error.
 - `ProxyTracker` in `proxy_tracking.py`: global lifecycle manager owning recorder mode, per-test store, and player registry. Plugin creates it; `record_class`, `record_function`, and `@record` all reach it via `get_tracker()`.
 - `get_tracker()` / `_set_tracker()` in `proxy_tracking.py`: accessor and installer for the session-global `ProxyTracker` instance.
 - `RecorderMode` (`StrEnum`): typed mode values `OFF`, `RECORD`, `PLAY` — replaces bare `str` throughout.

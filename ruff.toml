@@ -3,4 +3,4 @@
 # ergonomic selection that does not fight pytest (`assert`) or the spec'd pickle
 # fallback, and avoids ALL's mutually-exclusive rules.
 [lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RET", "PIE"]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RET", "PIE", "PLC0415"]
