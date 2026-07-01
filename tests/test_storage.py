@@ -3,7 +3,6 @@ from pathlib import Path
 from pytest_recorder.storage import (
     EncodedEvent,
     RecordingStore,
-    StoreSource,
     resolve_recording_path,
 )
 
@@ -12,10 +11,6 @@ def test_resolve_path_is_beside_test_file():
     test_file = Path("/proj/tests/mockproj/test_depth.py")
     p = resolve_recording_path("tests/mockproj/test_depth.py::test_add[1]", test_file)
     assert p == test_file.parent / "recordings" / "test_depth__test_add_1_.json"
-
-
-def test_store_source_is_abstract_base() -> None:
-    assert issubclass(RecordingStore, StoreSource)
 
 
 def test_encoded_event_is_dataclass() -> None:
