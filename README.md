@@ -42,3 +42,7 @@ pytest                     # default: plugin off, real objects
 In `play` the real object is never built. The player serves recorded returns (and re-raises recorded exceptions); any drift — wrong args, wrong order, extra or missing calls — raises a clear error.
 
 > Assumes recorded dependencies behave like **pure functions** (output determined by input). Recording depth is one level: chained calls like `client.session().query()` aren't replayed.
+
+## Learn more
+
+See [USAGE.md](USAGE.md) for the full API — `@record`, `record_class`, `record_function`, `is_recorder_mock`, the exception hierarchy, and where recordings live on disk.
