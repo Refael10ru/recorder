@@ -39,6 +39,10 @@ def test_record_function_returns_plain_value():
     assert isinstance(result, int)  # plain value, not a proxy
 
 
+def test_bare_record_decorator_fixture(bare_calc):
+    assert bare_calc.add(3, 4) == 7
+
+
 def test_is_recorder_mock_matches_mode(calc):
     assert is_recorder_mock(calc) is (MODE in ("record", "play"))
     assert is_recorder_mock(object()) is False

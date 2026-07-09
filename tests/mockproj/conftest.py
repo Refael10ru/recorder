@@ -27,3 +27,9 @@ def data():
 @record("client")
 def client():
     return objects.Client()
+
+
+@pytest.fixture
+@record
+def bare_calc():
+    return objects.Calculator()

@@ -1,0 +1,14 @@
+{
+  "bare_calc": [
+    {
+      "method": "add",
+      "args": [
+        3,
+        4
+      ],
+      "kwargs": {},
+      "result": 7,
+      "raised": null
+    }
+  ]
+}
