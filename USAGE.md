@@ -53,8 +53,8 @@ from pytest_recorder import record, record_class, record_function, is_recorder_m
 ### `@record(name=None)` — fixture decorator
 
 Wraps a fixture's return value in a recording/replay proxy. Apply it **between**
-`@pytest.fixture` and the fixture function, and always call it (`@record()`,
-not bare `@record`):
+`@pytest.fixture` and the fixture function; both `@record()` and bare `@record`
+work:
 
 ```python
 import pytest
