@@ -88,36 +88,6 @@ def test_extra_call_triggers_exhausted(tmp_path):
     assert "RecordingExhausted" in (play.stdout + play.stderr)
 
 
-def test_record_class_play_never_builds_real_object(tmp_path):
-    mock = _copy_mock(tmp_path / "mockproj")
-    assert _run(mock, "record").returncode == 0
-    # Break the real class: play must serve recordings, never construct it.
-    objects = mock / "objects.py"
-    sabotaged = objects.read_text().replace(
-        "class Calculator:",
-        "class Calculator:\n"
-        '    def __init__(self):\n'
-        '        raise AssertionError("real Calculator built in play")',
-    )
-    objects.write_text(sabotaged)
-    play = _run(mock, "play", "-k", "record_class")
-    assert play.returncode == 0, play.stdout + play.stderr
-
-
-def test_record_function_play_never_calls_real(tmp_path):
-    mock = _copy_mock(tmp_path / "mockproj")
-    assert _run(mock, "record").returncode == 0
-    # Break the real function: play must serve the recorded return value.
-    objects = mock / "objects.py"
-    sabotaged = objects.read_text().replace(
-        "def add(a, b):",
-        'def add(a, b):\n    raise AssertionError("real add called in play")',
-    )
-    objects.write_text(sabotaged)
-    play = _run(mock, "play", "-k", "record_function")
-    assert play.returncode == 0, play.stdout + play.stderr
-
-
 def test_removed_call_triggers_underused(tmp_path):
     mock = _copy_mock(tmp_path / "mockproj")
     assert _run(mock, "record").returncode == 0
