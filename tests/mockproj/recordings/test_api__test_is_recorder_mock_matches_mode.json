@@ -1,0 +1,14 @@
+{
+  "calc": [
+    {
+      "method": "add",
+      "args": [
+        1,
+        1
+      ],
+      "kwargs": {},
+      "result": 2,
+      "raised": null
+    }
+  ]
+}

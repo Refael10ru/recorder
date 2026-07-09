@@ -58,3 +58,42 @@ def test_mutation_triggers_mismatch(tmp_path):
     play = _run(mock, "play", "-k", "pure_callable_returns")
     assert play.returncode != 0, "mutated call should fail in play"
     assert "RecordingMismatch" in (play.stdout + play.stderr)
+
+
+def test_off_mode_runs_real_objects_and_records_nothing(tmp_path):
+    mock = _copy_mock(tmp_path / "mockproj")
+    res = _run(mock, "off")
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert not (mock / "recordings").exists()
+
+
+def test_play_without_recording_raises_missing(tmp_path):
+    mock = _copy_mock(tmp_path / "mockproj")  # recordings stripped by _copy_mock
+    play = _run(mock, "play", "-k", "flat_object")
+    assert play.returncode != 0, "play with no recording should fail"
+    assert "MissingRecording" in (play.stdout + play.stderr)
+
+
+def test_extra_call_triggers_exhausted(tmp_path):
+    mock = _copy_mock(tmp_path / "mockproj")
+    assert _run(mock, "record").returncode == 0
+    test_file = mock / "test_depth.py"
+    mutated = test_file.read_text().replace(
+        "assert adder(10, 20) == 30",
+        "assert adder(10, 20) == 30\n    assert adder(1, 1) == 2",
+    )
+    test_file.write_text(mutated)
+    play = _run(mock, "play", "-k", "pure_callable_returns")
+    assert play.returncode != 0, "extra call should fail in play"
+    assert "RecordingExhausted" in (play.stdout + play.stderr)
+
+
+def test_removed_call_triggers_underused(tmp_path):
+    mock = _copy_mock(tmp_path / "mockproj")
+    assert _run(mock, "record").returncode == 0
+    test_file = mock / "test_depth.py"
+    mutated = test_file.read_text().replace("assert adder(10, 20) == 30", "pass")
+    test_file.write_text(mutated)
+    play = _run(mock, "play", "-k", "pure_callable_returns")
+    assert play.returncode != 0, "missing call should fail in play"
+    assert "RecordingUnderused" in (play.stdout + play.stderr)

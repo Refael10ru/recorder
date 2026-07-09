@@ -1,0 +1,14 @@
+{
+  "tests.mockproj.objects.add": [
+    {
+      "method": "__call__",
+      "args": [
+        7,
+        8
+      ],
+      "kwargs": {},
+      "result": 15,
+      "raised": null
+    }
+  ]
+}

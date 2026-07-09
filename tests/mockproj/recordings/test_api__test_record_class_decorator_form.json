@@ -1,0 +1,14 @@
+{
+  "tests.mockproj.objects.Calculator([[], {}])#0": [
+    {
+      "method": "add",
+      "args": [
+        1,
+        2
+      ],
+      "kwargs": {},
+      "result": 3,
+      "raised": null
+    }
+  ]
+}
