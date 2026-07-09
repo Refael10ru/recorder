@@ -6,6 +6,9 @@ See [project_map.md](project_map.md) for the architecture overview, module
 responsibilities, data flow, and key design decisions. Keep it up to date when
 module boundaries or key decisions change.
 
+See [USAGE.md](USAGE.md) for the public API and how users invoke the plugin.
+Keep it up to date when the public API or CLI surface changes.
+
 ## Linting
 
 - ruff runs with a curated `select` set (see `ruff.toml`).
