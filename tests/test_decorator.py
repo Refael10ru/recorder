@@ -29,6 +29,18 @@ def test_default_name_uses_function_name(recording_targets) -> None:
     assert recording_targets.current_store().events("pricing")
 
 
+def test_bare_decorator_uses_function_name(recording_targets) -> None:
+    @record
+    def pricing():
+        return lambda a, b: a + b
+
+    gen = pricing()
+    proxy = next(gen)
+    assert proxy(2, 3) == 5
+    gen.close()
+    assert recording_targets.current_store().events("pricing")
+
+
 def test_explicit_name_overrides_function_name(recording_targets) -> None:
     @record("custom")
     def pricing():

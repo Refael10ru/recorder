@@ -1,16 +1,18 @@
 """The @record(name) decorator: a thin off/record/play selector."""
 
 import functools
+from collections.abc import Callable
 
 from pytest_recorder.engine import PlayerProxy, RecordingProxy
 from pytest_recorder.proxy_tracking import RecorderMode, get_tracker
 
 
-def record(name: str | None = None):
+def record(name: str | Callable | None = None):
     """Wrap a fixture factory so its value is recorded or replayed by mode.
 
     ``name`` keys the recording. Defaults to the decorated function's name,
-    so ``@record()`` on ``def pricing(): ...`` records under ``"pricing"``.
+    so ``@record()`` (or bare ``@record``) on ``def pricing(): ...`` records
+    under ``"pricing"``.
     """
 
     def deco(factory):
@@ -33,4 +35,7 @@ def record(name: str | None = None):
 
         return wrapper
 
+    if callable(name):  # bare @record: name is the factory itself
+        factory, name = name, None
+        return deco(factory)
     return deco
