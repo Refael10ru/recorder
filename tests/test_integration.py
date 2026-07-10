@@ -1,6 +1,8 @@
 """End-to-end record/play of the testbed via subprocess pytest runs."""
 
 import os
+import random
+import re
 import shutil
 import subprocess
 import sys
@@ -18,7 +20,7 @@ def _copy_mock(dst: Path) -> Path:
     return dst
 
 
-def _run(target: Path, mode: str, *extra: str) -> subprocess.CompletedProcess:
+def _run(target: Path | str, mode: str, *extra: str) -> subprocess.CompletedProcess:
     env = {**os.environ, "RECORDER_MODE": mode}
     return subprocess.run(
         [
@@ -58,6 +60,26 @@ def test_xdist_record_then_play(tmp_path):
     assert list((mock / "recordings").glob("*.json"))
     play = _run(mock, "play", "-n", "2")
     assert play.returncode == 0, play.stdout + play.stderr
+
+
+def test_play_order_randomized(tmp_path):
+    # Replay must not depend on test execution order: recordings are keyed
+    # per test, so a shuffled order must pass just like collection order.
+    mock = _copy_mock(tmp_path / "mockproj")
+    assert _run(mock, "record").returncode == 0
+    collect = _run(mock, "play", "--collect-only")
+    # ids are printed relative to the mockproj rootdir; anchor them so the
+    # play run (cwd=REPO) can resolve them.
+    ids = [str(mock / ln.strip()) for ln in collect.stdout.splitlines() if "::" in ln]
+    assert len(ids) > 2, collect.stdout
+    shuffled = ids.copy()
+    random.Random(2026).shuffle(shuffled)  # fixed seed: deterministic in CI
+    assert shuffled != ids
+    play = _run(shuffled[0], "play", *shuffled[1:])
+    assert play.returncode == 0, play.stdout + play.stderr
+    # every collected test actually ran (passed or was an intentional skip)
+    ran = sum(int(n) for n, _ in re.findall(r"(\d+) (passed|skipped)", play.stdout))
+    assert ran == len(ids), play.stdout
 
 
 def test_mutation_triggers_mismatch(tmp_path):
