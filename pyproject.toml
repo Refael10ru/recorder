@@ -31,4 +31,5 @@ ignore_missing_imports = true
 [dependency-groups]
 dev = [
     "mypy>=2.1.0",
+    "pytest-xdist>=3.8.0",
 ]
