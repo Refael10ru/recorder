@@ -6,6 +6,8 @@ tests/test_integration.py) in all three modes: off, record, play.
 
 import os
 
+import pytest
+
 from pytest_recorder import is_recorder_mock, record_class, record_function
 
 from . import objects
@@ -41,6 +43,30 @@ def test_record_function_returns_plain_value():
 
 def test_bare_record_decorator_fixture(bare_calc):
     assert bare_calc.add(3, 4) == 7
+
+
+@pytest.fixture
+@record_class(f"{OBJECTS}.Calculator")
+def proxied_calc():
+    # Patch is active only during the fixture body; the proxy it returns
+    # keeps recording/replaying method calls made later, inside the test.
+    return objects.Calculator()
+
+
+def test_record_class_decorates_fixture(proxied_calc):
+    assert proxied_calc.add(5, 6) == 11
+    assert proxied_calc.summary([10]) == {"sum": 10, "count": 1}
+
+
+@pytest.fixture
+@record_function(f"{OBJECTS}.add")
+def sums():
+    # Calls happen during fixture setup, inside the patched window.
+    return objects.add(1, 2), objects.add(30, 40)
+
+
+def test_record_function_decorates_fixture(sums):
+    assert sums == (3, 70)
 
 
 def test_is_recorder_mock_matches_mode(calc):

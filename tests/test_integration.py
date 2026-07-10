@@ -49,6 +49,17 @@ def test_record_then_play_passes(tmp_path):
     assert play.returncode == 0, play.stdout + play.stderr
 
 
+def test_xdist_record_then_play(tmp_path):
+    # Multi-worker support: recordings are one file per test, so parallel
+    # workers never contend on the same file.
+    mock = _copy_mock(tmp_path / "mockproj")
+    rec = _run(mock, "record", "-n", "2")
+    assert rec.returncode == 0, rec.stdout + rec.stderr
+    assert list((mock / "recordings").glob("*.json"))
+    play = _run(mock, "play", "-n", "2")
+    assert play.returncode == 0, play.stdout + play.stderr
+
+
 def test_mutation_triggers_mismatch(tmp_path):
     mock = _copy_mock(tmp_path / "mockproj")
     assert _run(mock, "record").returncode == 0

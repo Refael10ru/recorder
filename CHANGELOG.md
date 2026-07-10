@@ -8,7 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- System tests covering every public API point end-to-end via subprocess pytest runs against the `tests/mockproj` dummy project: `tests/mockproj/test_api.py` exercises `record_class`, `record_function`, `is_recorder_mock`, and the bare `@record` fixture form in all three modes; `tests/test_integration.py` gains `off`-mode, `MissingRecording`, `RecordingExhausted`, and `RecordingUnderused` cases (committed recordings included).
+- System tests covering every public API point end-to-end via subprocess pytest runs against the `tests/mockproj` dummy project, each following the remove-recording → record → play cycle: `tests/mockproj/test_api.py` exercises `record_class`, `record_function`, `is_recorder_mock`, and the bare `@record` fixture form in all three modes, including `record_class`/`record_function` decorating pytest fixtures; `tests/test_integration.py` gains `off`-mode, `MissingRecording`, `RecordingExhausted`, `RecordingUnderused`, and pytest-xdist (`-n 2`) record/play cases.
+- `pytest-xdist` added to the dev dependency group for the multi-worker system test.
 - Bare `@record` (without parentheses) now works on fixtures, recording under the function's name — previously it raised `TypeError` at fixture call time.
 - `PLC0415` added to ruff select — in-function imports are now a lint error.
 - `ProxyTracker` in `proxy_tracking.py`: global lifecycle manager owning recorder mode, per-test store, and player registry. Plugin creates it; `record_class`, `record_function`, and `@record` all reach it via `get_tracker()`.
@@ -27,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- Committed `tests/mockproj/recordings/` files: the integration cycle regenerates them from scratch (remove → record → play), so the directory is now gitignored.
 - `StoreSource` ABC removed from `storage.py`. `RecordingStore` no longer subclasses it; the `current_store()` / `test_id()` / `register_player()` shim methods on `RecordingStore` are gone.
 
 ## [0.1.0] - 2026-06-24
