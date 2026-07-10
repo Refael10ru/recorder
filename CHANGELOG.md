@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- System tests covering every public API point end-to-end via subprocess pytest runs against the `tests/mockproj` dummy project, each following the remove-recording → record → play cycle: `tests/mockproj/test_api.py` exercises `record_class`, `record_function`, `is_recorder_mock`, and the bare `@record` fixture form in all three modes, including `record_class`/`record_function` decorating pytest fixtures; `tests/test_integration.py` gains `off`-mode, `MissingRecording`, `RecordingExhausted`, `RecordingUnderused`, pytest-xdist (`-n 2`) record/play, and shuffled-order replay cases.
+- System tests covering every public API point end-to-end via subprocess pytest runs against the `tests/mockproj` dummy project, each following the remove-recording → record → play cycle: `tests/mockproj/test_api.py` exercises `record_class`, `record_function`, `is_recorder_mock`, and the bare `@record` fixture form in all three modes, including `record_class`/`record_function` decorating pytest fixtures (also stacked, recording only the heavy inner dependencies a real object under test creates in its `__init__`); `tests/test_integration.py` gains `off`-mode, `MissingRecording`, `RecordingExhausted`, `RecordingUnderused`, pytest-xdist (`-n 2`) record/play, and shuffled-order replay cases.
 - `pytest-xdist` added to the dev dependency group for the multi-worker system test.
 - Bare `@record` (without parentheses) now works on fixtures, recording under the function's name — previously it raised `TypeError` at fixture call time.
 - `PLC0415` added to ruff select — in-function imports are now a lint error.

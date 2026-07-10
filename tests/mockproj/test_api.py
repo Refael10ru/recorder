@@ -69,6 +69,23 @@ def test_record_function_decorates_fixture(sums):
     assert sums == (3, 70)
 
 
+@pytest.fixture
+@record_class(f"{OBJECTS}.Connection")
+@record_function(f"{OBJECTS}.resolve_host")
+def service():
+    # The object under test stays real; only the heavy dependencies it
+    # creates inside __init__ (the socket-like Connection and the DNS-like
+    # resolve_host call) are recorded/replayed.
+    return objects.Service()
+
+
+def test_fixture_records_only_inner_dependencies(service):
+    assert is_recorder_mock(service) is False  # object under test is real
+    assert is_recorder_mock(service.conn) is (MODE != "off")  # its socket isn't
+    # method call at test time goes through the real Service, replayed conn
+    assert service.transmit("ping") == "10.0.0.4:ack:ping"
+
+
 def test_is_recorder_mock_matches_mode(calc):
     assert is_recorder_mock(calc) is (MODE in ("record", "play"))
     assert is_recorder_mock(object()) is False
