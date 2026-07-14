@@ -43,11 +43,15 @@ pickle.loads(b)           # TypeError at play
   defensively, falling back to re-raising a generic error that preserves the
   original type name and message when reconstruction isn't possible.
 
-**Status.** Open.
+**Status.** Mitigated — `encode_exception` (serialize.py) now validates the
+pickle round-trip at record time, so the record run fails loudly and a bad
+recording can't be committed. Structural rebuild / defensive re-raise is not
+implemented: non-picklable exceptions still can't be replayed, they just fail
+at the right moment.
 
 ---
 
-## 2. 🟥 Secrets written into recordings (`record_targets`)
+## 2. 🟥 Secrets written into recordings (`record_class`)
 
 **Symptom.** Constructor arguments — including API keys/secrets — are written
 verbatim into the recording. Confirmed stream key:
@@ -57,10 +61,10 @@ finnhub.Client([[], {"api_key": "DEMO_LEAK_KEY_12345"}])#0
 ```
 
 **Found in.** finnhub-python (concrete leak); applies to every key-required client
-constructed via `record_targets` (python-binance, coinbase-advanced, alpha_vantage…).
+constructed via `record_class` (python-binance, coinbase-advanced, alpha_vantage…).
 
-**Cause.** `record_targets` keys each construction by its arguments
-(`_base_key` in `src/pytest_recorder/targets.py` json-dumps the raw args). Secrets
+**Cause.** `record_class` keys each construction by its arguments
+(`_base_key` in `src/pytest_recorder/proxy_tracking.py` json-dumps the raw args). Secrets
 passed to the constructor land in the key, which is persisted to disk and would be
 committed alongside tests.
 
@@ -75,7 +79,7 @@ way to mark secret-bearing positions.
 
 ---
 
-## 3. 🟧 `record_targets` does not support plain functions
+## 3. 🟧 `record_targets` does not support plain functions *(historical name of `record_class`)*
 
 **Symptom.** Pointing `record_targets` at a module-level function makes the test
 receive a proxy *around the return value* instead of the value:
@@ -106,7 +110,10 @@ def search():
 (not a class/factory) and record the call directly (wrap the symbol as a callable
 `RecordingProxy`, like the fixture path) rather than wrapping its return.
 
-**Status.** Open.
+**Status.** Fixed — `record_function` records the call itself for plain
+callables and passes the real return value through (see
+[`proxy_tracking.md`](proxy_tracking.md) and USAGE.md); `record_targets` was
+renamed `record_class` and remains the class/factory form.
 
 ---
 

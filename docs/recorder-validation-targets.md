@@ -15,8 +15,8 @@ The recorder's sweet spot:
 Two integration entry points:
 
 - `@record("name")` on a **fixture** that returns the client object,
-- `record_targets("pkg.mod.ClassName")` — monkeypatch by import path, for clients
-  **constructed inline** (no fixture seam).
+- `record_class("pkg.mod.ClassName")` / `record_function("pkg.mod.func")` —
+  monkeypatch by import path, for dependencies **used inline** (no fixture seam).
 
 ## Status legend
 
@@ -56,7 +56,7 @@ Ranked by fit. Star counts approximate.
 > Confirmed recorder defects/limitations are tracked in [`known-issues.md`](known-issues.md).
 
 - **Secrets in recordings.** Key-required clients (finnhub, coinbase-advanced,
-  alpha_vantage) pass `api_key`/`secret` into the constructor. `record_targets`
+  alpha_vantage) pass `api_key`/`secret` into the constructor. `record_class`
   keys streams by constructor args → the key lands in the recording file verbatim.
   Need a scrub/redact hook (cf. PRAW's `filter_access_token` VCR pattern).
 - **Lazy-property / chained objects.** The #1 disqualifier (PyGithub, PRAW,
@@ -70,7 +70,7 @@ Ranked by fit. Star counts approximate.
 ## Next picks (cover the full matrix)
 
 1. **coinbasepro-python** — keyless + fixture/inline, second crypto exchange.
-2. **pokebase** — keyless + exercises `record_targets` (module-level funcs).
+2. **pokebase** — keyless + exercises `record_function` (module-level funcs).
 3. **finnhub-python** — key-required → forces secret-scrubbing work.
 
 ## Per-project findings

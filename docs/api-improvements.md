@@ -6,12 +6,10 @@ Items 1–4 were the original plan; 5–6 emerged from the storage-refactor CR.
 
 ---
 
-## ~~1. Remove `current_store()` shim from RecordingStore~~ *(blocked on #5)*
+## ~~1. Remove `current_store()` shim from RecordingStore~~ *(done in proxy-tracking refactor)*
 
-`RecordingStore.current_store()` returning `self` is pure noise — it exists only
-because `RecordingStore` extends `StoreSource`. Removing it requires the ABC
-split described in item 5 below (once `RecordingStore` no longer extends
-`StoreSource` at all, the shim disappears).
+Done. `StoreSource` was removed outright (see item 5), so the shim methods on
+`RecordingStore` are gone.
 
 ---
 
@@ -38,7 +36,13 @@ Done. `engine.py`'s public surface is now `RecordingProxy`, `PlayerProxy`,
 
 ---
 
-## 5. Split `StoreSource` ABC into two protocols
+## ~~5. Split `StoreSource` ABC into two protocols~~ *(superseded: ABC removed)*
+
+Resolved differently in the proxy-tracking refactor: instead of two protocols,
+`StoreSource` was deleted. Proxies now take a plain
+`get_store: Callable[[], RecordingStore]` and detect test boundaries by store
+identity (`ProxyTracker.begin_test` builds a fresh store per test). The
+original analysis kept below for context.
 
 **Current:** `StoreSource` mixes two concerns in one ABC:
 - `test_id()` — a test-boundary sensor, used only by proxies to detect when to
@@ -61,7 +65,12 @@ disappear or simplify.
 
 ---
 
-## 6. Redesign targets.py as its own isolated layer
+## ~~6. Redesign targets.py as its own isolated layer~~ *(done: proxy_tracking.py)*
+
+Done in the proxy-tracking refactor: `targets.py` became `proxy_tracking.py`,
+`_BlockSource` was removed, and `ProxyTracker` owns the player lifecycle for
+`@record`, `record_class`, and `record_function` alike (consumption asserted at
+`end_test`). The original analysis kept below for context.
 
 **Current:** `targets.py` uses `_BlockSource` (a `StoreSource` shim) to intercept
 `register_player` so `record_class` can assert at block exit rather than at
