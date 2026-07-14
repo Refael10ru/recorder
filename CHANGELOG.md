@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Comment in `engine.py` referenced the nonexistent `RecordTargets.begin_test`; corrected to `ProxyTracker.begin_test`.
+
 ### Added
 
 - System tests covering every public API point end-to-end via subprocess pytest runs against the `tests/mockproj` dummy project, each following the remove-recording → record → play cycle: `tests/mockproj/test_api.py` exercises `record_class`, `record_function`, `is_recorder_mock`, and the bare `@record` fixture form in all three modes, including `record_class`/`record_function` decorating pytest fixtures (also stacked, recording only the heavy inner dependencies a real object under test creates in its `__init__`); `tests/test_integration.py` gains `off`-mode, `MissingRecording`, `RecordingExhausted`, `RecordingUnderused`, pytest-xdist (`-n 2`) record/play, and shuffled-order replay cases.
