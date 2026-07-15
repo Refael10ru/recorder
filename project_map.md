@@ -109,7 +109,7 @@ tests/mockproj/test_depth.py::test_flat_object
 | [`docs/errors.md`](docs/errors.md) | Exception hierarchy |
 | [`docs/serialize.md`](docs/serialize.md) | JSON-first encode/decode with pickle fallback |
 | [`docs/storage.md`](docs/storage.md) | Path resolution and per-test event buffer |
-| [`docs/engine.md`](docs/engine.md) | `RecordingProxy`, `PlayerProxy`, `_StoreSource` Protocol |
-| [`docs/plugin.md`](docs/plugin.md) | `Controller`, pytest hooks |
+| [`docs/engine.md`](docs/engine.md) | `RecordingProxy`, `PlayerProxy`, `is_recorder_mock` |
+| [`docs/plugin.md`](docs/plugin.md) | pytest hooks (thin adapter) |
 | [`docs/decorator.md`](docs/decorator.md) | `@record` fixture decorator |
-| [`docs/targets.md`](docs/targets.md) | `record_class` / `record_function` |
+| [`docs/proxy_tracking.md`](docs/proxy_tracking.md) | `ProxyTracker`, `record_class` / `record_function` |

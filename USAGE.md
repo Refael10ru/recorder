@@ -189,7 +189,9 @@ with `--recorder=record`; the files are overwritten.
   are written verbatim into the recording's stream key. Prefer the `@record`
   fixture form for secret-bearing clients — it keys by fixture name, not
   constructor args. See [docs/known-issues.md](docs/known-issues.md) #2.
-- **Exception replay can fail for non-picklable exception classes** — record
-  passes, play breaks. See [docs/known-issues.md](docs/known-issues.md) #1.
+- **Non-picklable exception classes can't be recorded.** The pickle round-trip
+  is validated at record time, so the record run fails loudly instead of
+  writing a recording that breaks at play. See
+  [docs/known-issues.md](docs/known-issues.md) #1.
 
 The full defect list lives in [docs/known-issues.md](docs/known-issues.md).

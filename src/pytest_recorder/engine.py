@@ -95,7 +95,7 @@ class PlayerProxy(_RecorderMock):
         self._maybe_reload()
 
     def _maybe_reload(self) -> None:
-        # WHY: compare store identity not test_id — RecordTargets.begin_test creates
+        # WHY: compare store identity not test_id — ProxyTracker.begin_test creates
         # a fresh RecordingStore per test, so reference change = test boundary.
         store = self._get_store()
         if store is self._store:

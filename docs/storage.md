@@ -1,46 +1,31 @@
 # storage.py
 
-## Public API (used by engine, plugin, targets)
+## Public API (used by engine, proxy_tracking)
 
 ```python
 from pytest_recorder.storage import (
     EncodedEvent,
     RecordingStore,
-    StoreSource,
     resolve_recording_path,
 )
 ```
 
-### `EncodedEvent` (TypedDict)
+### `EncodedEvent` (dataclass, `slots=True`)
 
 Shape of one recorded call, stored in JSON:
 
 ```python
-{
-    "method":  str,           # "__call__" or method name
-    "args":    list[Any],     # positional args, JSON-safe (pickle-fallback encoded)
-    "kwargs":  dict[str, Any],
-    "return":  Any | None,    # exactly one of return/raised is non-null
-    "raised":  Any | None,
-}
+@dataclasses.dataclass(slots=True)
+class EncodedEvent:
+    method: str            # "__call__" or method name
+    args: list[Any]        # positional args, JSON-safe (pickle-fallback encoded)
+    kwargs: dict[str, Any]
+    result: Any            # exactly one of result/raised is non-None
+    raised: Any
 ```
 
-Uses TypedDict functional syntax because `"return"` is a Python keyword and
-cannot be a dataclass field name without renaming the JSON key on disk.
-
-### `StoreSource` (ABC)
-
-Contract that proxies (`RecordingProxy`, `PlayerProxy`) depend on to get the
-per-test store and detect test boundaries. Implemented by `Controller` (plugin)
-and `RecordingStore` (direct use in tests).
-
-```python
-source.current_store() -> RecordingStore  # store for the running test
-source.test_id() -> str                   # changes when the test changes
-source.register_player(player)            # track for end-of-test assertion
-```
-
-See *Design note* below.
+The field is named `result` (not `return`) because `return` is a Python keyword
+and cannot be a dataclass field name; the JSON key on disk is `result` too.
 
 ### `resolve_recording_path(nodeid, test_file) -> Path`
 
@@ -54,16 +39,16 @@ test_file: Path("/proj/tests/mockproj/test_depth.py")
 
 ### `RecordingStore(path)`
 
-In-memory `{fixture_name: [EncodedEvent, ...]}` dict backed by a JSON file.
-Also implements `StoreSource` so it can be passed directly to proxies in tests
-(without a full `Controller`).
+In-memory `{stream_name: [EncodedEvent, ...]}` dict backed by a JSON file.
+`ProxyTracker.begin_test` builds (record) or loads (play) one per test;
+proxies reach it via their `get_store` callable.
 
 | Method | Mode | Purpose |
 |---|---|---|
 | `append(name, event)` | record | Buffer one event |
 | `events(name) -> list[EncodedEvent]` | play | Return buffered events; empty list if absent |
-| `load()` | play | Read `.json` from disk into `_data` |
-| `flush()` | record | Write `_data` to disk; creates parent dirs |
+| `load()` | play | Read `.json` from disk into `EncodedEvent`s |
+| `flush()` | record | Write buffered events to disk; creates parent dirs |
 
 ## Internals
 
@@ -73,18 +58,9 @@ Recordings live in `recordings/` **beside the test module**, not at the project
 root. This means they travel with the test when it is moved or copied. All
 non-alphanumeric characters in the key become `_` for filesystem safety.
 
-### StoreSource — design note
+### History
 
-`StoreSource` currently mixes two concerns:
-
-1. **Boundary detection** — `test_id()` returns an opaque string that proxies
-   compare across calls to detect when the test changed and events should be
-   reloaded. Not used for file paths.
-2. **Store access** — `current_store()` and `register_player()` are called per
-   method call on a proxy.
-
-`RecordingStore` implements both because it extends the ABC, but `current_store()`
-(returns `self`) and `register_player()` (no-op) are noise — they exist only for
-structural compatibility. A future PR will split the ABC into two protocols so
-`RecordingStore` is only the thing *returned by* `current_store()`, not a
-`StoreSource` itself. See `api-improvements.md` item 5.
+`storage.py` once defined a `StoreSource` ABC that mixed boundary detection and
+store access; it was removed in the storage refactor. Proxies now take a plain
+`get_store` callable and detect test boundaries by store identity — see
+[`engine.md`](engine.md).

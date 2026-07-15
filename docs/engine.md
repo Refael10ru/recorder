@@ -1,47 +1,40 @@
 # engine.py
 
-## Public API (used by plugin, decorator, targets)
+## Public API (used by plugin, decorator, proxy_tracking)
 
 ```python
-from pytest_recorder.engine import RecordingProxy, PlayerProxy  # decorator, targets, plugin
-from pytest_recorder.engine import _encode_call                 # targets only
+from pytest_recorder.engine import RecordingProxy, PlayerProxy, is_recorder_mock, make_event
 ```
 
 | Symbol | Used by | Purpose |
 |---|---|---|
-| `RecordingProxy(target, name, source)` | decorator, targets | Wraps a real object; records every call |
-| `PlayerProxy(name, source)` | plugin, decorator, targets | Replays recorded events in strict order |
-| `_encode_call(args, kwargs)` | targets | Encode positional + keyword args to JSON-safe forms |
+| `RecordingProxy(target, name, get_store)` | decorator, proxy_tracking | Wraps a real object; records every call |
+| `PlayerProxy(name, get_store)` | decorator, proxy_tracking | Replays recorded events in strict order |
+| `is_recorder_mock(obj)` | test code | `True` for either proxy, `False` for anything else |
+| `make_event(method, args, kwargs, ret, exc)` | internal | Build one serialized `EncodedEvent` |
 
-Note: `_encode_call` has an underscore prefix but is imported cross-module by
-`targets.py`. Treat it as part of engine's internal API for now.
+Both proxies take `get_store: Callable[[], RecordingStore]` — usually the bound
+method `ProxyTracker.current_store` — and resolve the store lazily per call.
 
 ## Internals
-
-### _StoreSource Protocol
-
-Structural type for anything with `current_store() -> RecordingStore`. Satisfied
-by both `RecordingStore` (via its `current_store()` shim) and `Controller`
-(real implementation). Using a Protocol instead of an ABC avoids the circular
-import that would arise if engine imported `Controller` from plugin.
 
 ### RecordingProxy
 
 Wraps a real target. On every method call or `__call__`:
 
 1. Calls the real method; captures return value or exception.
-2. Serializes via `encode` / `encode_exception`.
-3. Calls `source.current_store().append(name, event)`.
+2. Serializes via `make_event` (`encode` / `encode_exception`).
+3. Calls `get_store().append(name, event)`.
 4. Re-raises the exception or returns the value unchanged.
 
 Non-callable attribute access raises `AttributeError` immediately — only method
 calls are recorded (pure-function assumption).
 
-**Why hold `source`, not a fixed store (SCP-1):**  
+**Why hold `get_store`, not a fixed store (SCP-1):**
 Non-function-scope fixtures (session/module/class) create one proxy shared across
 multiple tests. Locking to a store at construction time sends all N tests' calls
-to the first test's recording file. Calling `source.current_store()` per call
-routes each test to the correct file as `Controller._nodeid` changes.
+to the first test's recording file. Calling `get_store()` per call routes each
+test to the store `ProxyTracker.begin_test` built for it.
 
 ### PlayerProxy
 
@@ -51,33 +44,32 @@ On every call:
 
 1. `_maybe_reload()` — detect test boundary; reload events if needed.
 2. Verify next event matches `(method, encoded-args, encoded-kwargs)`.
-3. Decode and return or re-raise.
+3. Decode and return, or re-raise the decoded exception.
 
 `assert_consumed()` raises `RecordingUnderused` if fewer events were consumed
-than exist in the recording.
+than exist in the recording. `ProxyTracker.end_test` calls it on every
+registered player.
 
-**`_maybe_reload` sentinel logic:**  
-`_last_nodeid` starts as `_INIT`. On each call, `getattr(source, '_nodeid', _UNSET)` is compared to `_last_nodeid`.
+**`_maybe_reload` boundary detection:**
+`ProxyTracker.begin_test` builds a fresh `RecordingStore` per test, so the
+player compares `get_store()` by **identity** with the store it last loaded
+from. A new reference means a new test: reload events, reset position. Same
+reference means same test: no-op.
 
-Two sentinels are required:
+**Why matching compares encoded forms:**
+`_consume` encodes the live args (`_encode_call`) and compares them to the
+event's stored encoded args. Comparing decoded values breaks on numpy/pandas
+(`==` returns arrays / raises "truth value is ambiguous"); encoded forms are
+plain JSON values, where `==` is always safe.
 
-- `_UNSET`: returned by `getattr` when source is a plain `RecordingStore` (no `_nodeid`).
-- `_INIT`: the initial value — must differ from `_UNSET`.
+### make_event
 
-If only one sentinel existed and `_last_nodeid` started as `_UNSET`: on the
-first call against a plain store, `getattr` would return `_UNSET` → equal → no
-initial load → broken. `_INIT ≠ _UNSET` ensures the first `_maybe_reload` always
-fires; then `_UNSET == _UNSET` on subsequent calls to a plain store prevents
-spurious reloads. For a Controller source, `_nodeid` changes per test → reload +
-re-register on each test boundary.
-
-### make_event / _encode_call
-
-`make_event` builds the serialized event dict:
+Builds the serialized `EncodedEvent` (see [`storage.md`](storage.md)):
 
 ```json
-{"method": "add", "args": [2, 3], "kwargs": {}, "return": 5, "raised": null}
+{"method": "add", "args": [2, 3], "kwargs": {}, "result": 5, "raised": null}
 ```
 
-Exactly one of `"return"` / `"raised"` is non-null.
-`_encode_call` runs args and kwargs through `serialize.encode` before storing.
+Exactly one of `result` / `raised` is non-null. Exceptions go through
+`encode_exception`, which validates the pickle round-trip at record time
+(FIN-1 — see [`serialize.md`](serialize.md)).

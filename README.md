@@ -1,16 +1,16 @@
 # pytest-recorder
 
-**Record what your slow fixtures do once. Replay it instantly forever — and fail loudly the moment your code uses them differently.**
+**Record once what your slow fixtures do. Replay it instantly forever — and fail loudly the moment your code uses them differently.**
 
 ## What it is
 
-A pytest plugin that hooks the objects/callables you mark in your fixtures, **records** their inputs and outputs to a per-test file, then in **replay** mode swaps the real thing for a player that serves the recording back — asserting every call matches, in order.
+A pytest plugin that hooks the objects/callables you mark in your fixtures, **records** their inputs and outputs to a per-test file, then in **play** mode swaps the real thing for a player that serves the recording back — asserting every call matches, in order.
 
 ## Why it exists
 
 System tests are slow and flaky because they hit real dependencies — databases, HTTP APIs, pricing engines — on every run. The usual fix is hand-written mocks: tedious to build, easy to drift out of sync with reality, and they quietly keep passing even when your code's usage changes.
 
-pytest-recorder removes the hand-work. Record once against the real dependency; from then on tests run in milliseconds with zero network, and the recording *is* the contract — call the dependency with different args, or in a different order, and the test fails.
+pytest-recorder removes the handwork. Record once against the real dependency; from then on tests run in milliseconds with zero network, and the recording *is* the contract — call the dependency with different args, or in a different order, and the test fails.
 
 ## What it's used for
 
